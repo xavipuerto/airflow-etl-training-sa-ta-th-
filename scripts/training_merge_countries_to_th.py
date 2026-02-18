@@ -227,16 +227,18 @@ def merge_to_th(countries: List[Dict[str, Any]]) -> Dict[str, int]:
         print(f"📊 Antes del MERGE: {count_before} países en TH")
         print(f"🔄 Ejecutando MERGE de {len(countries)} países...")
         
-        # Convert JSONB fields (dict/list) to JSON strings
+        # Convert JSONB fields (dict/list) to JSON strings for psycopg2
+        # psycopg2 reads JSONB columns as Python dict/list, but needs JSON strings for INSERT
+        jsonb_fields = ['languages', 'currencies', 'timezones', 'borders']
         for country in countries:
-            if country.get('languages') and isinstance(country['languages'], (dict, list)):
-                country['languages'] = json.dumps(country['languages'])
-            if country.get('currencies') and isinstance(country['currencies'], (dict, list)):
-                country['currencies'] = json.dumps(country['currencies'])
-            if country.get('timezones') and isinstance(country['timezones'], (dict, list)):
-                country['timezones'] = json.dumps(country['timezones'])
-            if country.get('borders') and isinstance(country['borders'], (dict, list)):
-                country['borders'] = json.dumps(country['borders'])
+            for field in jsonb_fields:
+                value = country.get(field)
+                if value is not None and not isinstance(value, str):
+                    # Convert dict/list to JSON string
+                    country[field] = json.dumps(value)
+                elif value is None:
+                    # Ensure None is properly handled
+                    country[field] = None
         
         execute_batch(cur, merge_sql, countries, page_size=100)
         conn.commit()
