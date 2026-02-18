@@ -1,0 +1,57 @@
+# Ignorar archivos compilados de Python
+__pycache__/
+*.pyc
+*.pyo
+*.py[cod]
+*$py.class
+
+# Ignorar datos de logs
+logs/
+*.log
+*.pid
+
+# Ignorar todo el contenido de postgres/
+data/postgres/*
+
+# Ignorar todo el contenido de postgres_raw
+data/postgres_raw/*
+
+# Ignorar CSV DE sftp
+data/sftp/*
+
+# Pero no ignorar el .gitkeep
+!data/postgres/.gitkeep
+
+# Airflow
+airflow.db
+airflow.cfg.lock
+webserver_config.py
+unittests.cfg
+airflow-*.pid
+
+# Secrets y configuración sensible
+.env
+.airflow_secrets
+*.pem
+*.key
+config.ini
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker volumes (no subir datos)
+postgres-db-volume/
+postgres-goaigua-volume/
