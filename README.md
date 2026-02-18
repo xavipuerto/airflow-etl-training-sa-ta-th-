@@ -313,11 +313,168 @@ docker-compose down -v
 docker-compose up -d
 ```
 
+## � TimescaleDB Hypertable Setup (Advanced)
+
+The `th_training_air_quality` table is designed for time-series partitioning with TimescaleDB.
+
+**IMPORTANT**: Execute these commands AFTER running the ETL a few times to populate data.
+
+### 1. Connect to TimescaleDB
+
+```bash
+docker exec -it airflow-postgres-goaigua-1 psql -U goaigua -d goaigua_data
+```
+
+### 2. Convert to Hypertable (Monthly Partitions)
+
+```sql
+-- Create hypertable with monthly partitions
+SELECT create_hypertable(
+  'ga_integration.th_training_air_quality',
+  'measured_at',
+  chunk_time_interval => INTERVAL '1 month',
+  associated_schema_name => 'ga_integration_part',
+  associated_table_prefix => 'th_training_air_quality',
+  if_not_exists => true,
+  migrate_data => true
+);
+```
+
+### 3. Configure Compression
+
+```sql
+-- Enable compression
+ALTER TABLE ga_integration.th_training_air_quality SET (
+  timescaledb.compress = true,
+  timescaledb.compress_orderby = 'measured_at DESC',
+  timescaledb.compress_segmentby = 'station_id'
+);
+
+-- Automatic compression policy (compress chunks older than 300 days)
+SELECT add_compression_policy(
+  'ga_integration.th_training_air_quality',
+  INTERVAL '300 days'
+);
+```
+
+### 4. Insert Test Data (100k rows across 18 months)
+
+```sql
+WITH params AS (
+  SELECT
+    (48 * 30 * 24)::int AS hours_window  -- ~18 months in hours
+),
+src AS (
+  SELECT
+    -- Deterministic measured_at: distributes hours backwards within window
+    date_trunc('hour', now())
+      - ((gs.i % (SELECT hours_window FROM params)) * interval '1 hour') AS measured_at,
+
+    -- Deterministic station_id (dispersed)
+    (1000 + ((gs.i * 7919) % 20000))::int AS station_id
+  FROM generate_series(1, 100000) AS gs(i)
+)
+
+INSERT INTO ga_integration.th_training_air_quality
+(
+  measured_at, station_id, city_name, country_code,
+  latitude, longitude, aqi, dominant_pollutant,
+  pm25, pm10, o3, no2, so2, co,
+  temperature, humidity, pressure, wind_speed,
+  execution_id, loaded_at
+)
+SELECT
+  s.measured_at,
+  s.station_id,
+  ('City-' || (1 + floor(random() * 800))::int)::varchar(100),
+  (ARRAY['ES','IT','FR','DE','GB','AE','SA','PT','NL','BE','TR',
+         'PL','GR','RO','SE','FI','IE','CH','DK','NO','US','CA','AU'])[1 + floor(random()*23)]::varchar(2),
+  round(((-60 + random()*140)::numeric), 6),
+  round(((-170 + random()*340)::numeric), 6),
+  (floor(random() * 401))::int,
+  (ARRAY['pm25','pm10','o3','no2','so2','co'])[1 + floor(random()*6)]::varchar(10),
+  round((random()*250)::numeric, 2),
+  round((random()*300)::numeric, 2),
+  round((random()*200)::numeric, 2),
+  round((random()*200)::numeric, 2),
+  round((random()*50 )::numeric, 2),
+  round((random()*20 )::numeric, 2),
+  round(((-15 + random()*55 )::numeric), 2),
+  round(((10 + random()*90 )::numeric), 2),
+  round(((950 + random()*100)::numeric), 2),
+  round(((0 + random()*20 )::numeric), 2),
+  ('scheduled__' || to_char(now(), 'YYYY-MM-DD"T"HH24:MI:SS.MS') || '+00:00'),
+  now()
+FROM src s
+ON CONFLICT (station_id, measured_at) DO UPDATE
+SET
+  city_name = EXCLUDED.city_name,
+  country_code = EXCLUDED.country_code,
+  latitude = EXCLUDED.latitude,
+  longitude = EXCLUDED.longitude,
+  aqi = EXCLUDED.aqi,
+  dominant_pollutant = EXCLUDED.dominant_pollutant,
+  pm25 = EXCLUDED.pm25,
+  pm10 = EXCLUDED.pm10,
+  o3 = EXCLUDED.o3,
+  no2 = EXCLUDED.no2,
+  so2 = EXCLUDED.so2,
+  co = EXCLUDED.co,
+  temperature = EXCLUDED.temperature,
+  humidity = EXCLUDED.humidity,
+  pressure = EXCLUDED.pressure,
+  wind_speed = EXCLUDED.wind_speed,
+  execution_id = EXCLUDED.execution_id,
+  loaded_at = EXCLUDED.loaded_at;
+```
+
+### 5. Verify Partitions
+
+```sql
+-- Check created chunks (monthly partitions)
+SELECT * FROM timescaledb_information.chunks
+WHERE hypertable_name = 'th_training_air_quality'
+ORDER BY chunk_name;
+
+-- Check chunk statistics
+SELECT 
+  chunk_name,
+  range_start,
+  range_end,
+  num_rows
+FROM timescaledb_information.chunks
+WHERE hypertable_name = 'th_training_air_quality';
+```
+
+### 6. Query Examples with Partition Pruning
+
+```sql
+-- Get recent data for specific station (uses partition pruning)
+SELECT station_id, city_name, aqi, measured_at
+FROM ga_integration.th_training_air_quality
+WHERE measured_at >= now() - interval '7 days'
+  AND station_id = 5000
+ORDER BY measured_at DESC
+LIMIT 10;
+
+-- Aggregated air quality by country (last 30 days)
+SELECT 
+  country_code,
+  AVG(aqi) as avg_aqi,
+  MAX(aqi) as max_aqi,
+  COUNT(*) as measurements
+FROM ga_integration.th_training_air_quality
+WHERE measured_at >= now() - interval '30 days'
+GROUP BY country_code
+ORDER BY avg_aqi DESC;
+```
+
 ## 📚 Additional Resources
 
 - [Apache Airflow Documentation](https://airflow.apache.org/docs/)
 - [REST Countries API](https://restcountries.com/)
 - [AQICN API](https://aqicn.org/api/)
+- [TimescaleDB Documentation](https://docs.timescale.com/)
 - [Data Warehouse Fundamentals](https://en.wikipedia.org/wiki/Data_warehouse)
 
 ## 📄 License

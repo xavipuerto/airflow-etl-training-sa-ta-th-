@@ -527,15 +527,19 @@ CREATE TABLE IF NOT EXISTS ga_integration.sa_training_air_quality (
 );
 
 -- TH: Training Air Quality (histórico de calidad del aire - time series)
-CREATE TABLE IF NOT EXISTS ga_integration.th_training_air_quality (
-    id SERIAL PRIMARY KEY,
+-- Note: This table is designed for TimescaleDB hypertable conversion
+-- Run the hypertable setup commands from the TIMESCALEDB HYPERTABLE SETUP section after initial data load
+DROP TABLE IF EXISTS ga_integration.th_training_air_quality;
+
+CREATE TABLE ga_integration.th_training_air_quality (
+    id BIGINT GENERATED ALWAYS AS IDENTITY,  -- Auto-increment ID (not part of PK)
     measured_at TIMESTAMP NOT NULL,
-    station_id INTEGER NOT NULL,
+    station_id INT4 NOT NULL,
     city_name VARCHAR(100),
     country_code VARCHAR(2),
     latitude NUMERIC(10,6),
     longitude NUMERIC(10,6),
-    aqi INTEGER,
+    aqi INT4,
     dominant_pollutant VARCHAR(10),
     pm25 NUMERIC(10,2),
     pm10 NUMERIC(10,2),
@@ -549,7 +553,9 @@ CREATE TABLE IF NOT EXISTS ga_integration.th_training_air_quality (
     wind_speed NUMERIC(6,2),
     execution_id VARCHAR(100),
     loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (measured_at, station_id)
+    
+    -- Composite PK includes partitioning column for TimescaleDB
+    CONSTRAINT th_training_air_quality_pk PRIMARY KEY (station_id, measured_at)
 );
 
 -- Create indexes for performance
@@ -557,8 +563,11 @@ CREATE INDEX IF NOT EXISTS idx_th_countries_code_iso3 ON ga_integration.th_train
 CREATE INDEX IF NOT EXISTS idx_th_countries_region ON ga_integration.th_training_countries(region);
 CREATE INDEX IF NOT EXISTS idx_th_weather_measured_at ON ga_integration.th_training_weather(measured_at);
 CREATE INDEX IF NOT EXISTS idx_th_weather_city ON ga_integration.th_training_weather(city);
+
+-- Air Quality indexes (optimized for TimescaleDB queries)
 CREATE INDEX IF NOT EXISTS idx_th_air_quality_measured_at ON ga_integration.th_training_air_quality(measured_at);
 CREATE INDEX IF NOT EXISTS idx_th_air_quality_station ON ga_integration.th_training_air_quality(station_id);
+CREATE INDEX IF NOT EXISTS idx_th_air_quality_station_measured ON ga_integration.th_training_air_quality(station_id, measured_at DESC);
 
 -- =========================================
 
