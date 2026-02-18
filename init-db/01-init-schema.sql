@@ -348,6 +348,212 @@ ORDER BY backflow_total DESC;
 -- =========================================
 -- COMENTARIOS
 -- =========================================
+-- TRAINING TABLES - SA/TA/TH Pattern
+-- =========================================
+
+-- SA: Training Countries Basic (campos básicos)
+CREATE TABLE IF NOT EXISTS ga_integration.sa_training_countries_basic (
+    id SERIAL PRIMARY KEY,
+    code_iso2 VARCHAR(2),
+    code_iso3 VARCHAR(3),
+    name_common VARCHAR(255),
+    name_official VARCHAR(255),
+    name_native TEXT,
+    capital VARCHAR(255),
+    region VARCHAR(100),
+    subregion VARCHAR(100),
+    area NUMERIC(15,2),
+    population BIGINT,
+    execution_id VARCHAR(100),
+    loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- SA: Training Countries Geo (campos geográficos)
+CREATE TABLE IF NOT EXISTS ga_integration.sa_training_countries_geo (
+    id SERIAL PRIMARY KEY,
+    code_iso2 VARCHAR(2),
+    code_iso3 VARCHAR(3),
+    latitude NUMERIC(10,6),
+    longitude NUMERIC(10,6),
+    landlocked BOOLEAN,
+    borders JSONB,
+    execution_id VARCHAR(100),
+    loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- SA: Training Countries Culture (campos culturales/políticos)
+CREATE TABLE IF NOT EXISTS ga_integration.sa_training_countries_culture (
+    id SERIAL PRIMARY KEY,
+    code_iso2 VARCHAR(2),
+    code_iso3 VARCHAR(3),
+    code_numeric VARCHAR(3),
+    languages JSONB,
+    currencies JSONB,
+    timezones JSONB,
+    flag_emoji VARCHAR(10),
+    flag_svg TEXT,
+    independent BOOLEAN,
+    un_member BOOLEAN,
+    execution_id VARCHAR(100),
+    loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- TH: Training Countries (tabla histórica consolidada)
+CREATE TABLE IF NOT EXISTS ga_integration.th_training_countries (
+    id SERIAL PRIMARY KEY,
+    code_iso2 VARCHAR(2),
+    code_iso3 VARCHAR(3) UNIQUE NOT NULL,
+    code_numeric VARCHAR(3),
+    name_common VARCHAR(255),
+    name_official VARCHAR(255),
+    name_native TEXT,
+    capital VARCHAR(255),
+    region VARCHAR(100),
+    subregion VARCHAR(100),
+    latitude NUMERIC(10,6),
+    longitude NUMERIC(10,6),
+    area NUMERIC(15,2),
+    landlocked BOOLEAN,
+    population BIGINT,
+    languages JSONB,
+    currencies JSONB,
+    timezones JSONB,
+    borders JSONB,
+    flag_emoji VARCHAR(10),
+    flag_svg TEXT,
+    independent BOOLEAN,
+    un_member BOOLEAN,
+    first_loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    version INTEGER DEFAULT 1
+);
+
+-- SA: Training Regions Stats (estadísticas por región)
+CREATE TABLE IF NOT EXISTS ga_integration.sa_training_regions_stats (
+    id SERIAL PRIMARY KEY,
+    region VARCHAR(100),
+    total_countries INTEGER,
+    total_population BIGINT,
+    avg_population BIGINT,
+    total_area NUMERIC(15,2),
+    landlocked_count INTEGER,
+    independent_count INTEGER,
+    un_member_count INTEGER,
+    execution_id VARCHAR(100),
+    loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- TH: Training Regions Stats (histórico de estadísticas)
+CREATE TABLE IF NOT EXISTS ga_integration.th_training_regions_stats (
+    id SERIAL PRIMARY KEY,
+    region VARCHAR(100) UNIQUE NOT NULL,
+    total_countries INTEGER,
+    total_population BIGINT,
+    avg_population BIGINT,
+    total_area NUMERIC(15,2),
+    landlocked_count INTEGER,
+    independent_count INTEGER,
+    un_member_count INTEGER,
+    first_loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    version INTEGER DEFAULT 1
+);
+
+-- SA: Training Weather (datos meteorológicos)
+CREATE TABLE IF NOT EXISTS ga_integration.sa_training_weather (
+    id SERIAL PRIMARY KEY,
+    measured_at TIMESTAMP,
+    country VARCHAR(100),
+    city VARCHAR(100),
+    latitude NUMERIC(10,6),
+    longitude NUMERIC(10,6),
+    temperature NUMERIC(5,2),
+    humidity NUMERIC(5,2),
+    precipitation NUMERIC(7,2),
+    wind_speed NUMERIC(6,2),
+    weather_code INTEGER,
+    execution_id VARCHAR(100),
+    loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- TH: Training Weather (histórico de datos meteorológicos - time series)
+CREATE TABLE IF NOT EXISTS ga_integration.th_training_weather (
+    id SERIAL PRIMARY KEY,
+    measured_at TIMESTAMP NOT NULL,
+    country VARCHAR(100),
+    city VARCHAR(100) NOT NULL,
+    latitude NUMERIC(10,6),
+    longitude NUMERIC(10,6),
+    temperature NUMERIC(5,2),
+    humidity NUMERIC(5,2),
+    precipitation NUMERIC(7,2),
+    wind_speed NUMERIC(6,2),
+    weather_code INTEGER,
+    execution_id VARCHAR(100),
+    loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (measured_at, city)
+);
+
+-- SA: Training Air Quality (calidad del aire)
+CREATE TABLE IF NOT EXISTS ga_integration.sa_training_air_quality (
+    id SERIAL PRIMARY KEY,
+    measured_at TIMESTAMP,
+    station_id INTEGER,
+    city_name VARCHAR(100),
+    country_code VARCHAR(2),
+    latitude NUMERIC(10,6),
+    longitude NUMERIC(10,6),
+    aqi INTEGER,
+    dominant_pollutant VARCHAR(10),
+    pm25 NUMERIC(10,2),
+    pm10 NUMERIC(10,2),
+    o3 NUMERIC(10,2),
+    no2 NUMERIC(10,2),
+    so2 NUMERIC(10,2),
+    co NUMERIC(10,2),
+    temperature NUMERIC(5,2),
+    humidity NUMERIC(5,2),
+    pressure NUMERIC(7,2),
+    wind_speed NUMERIC(6,2),
+    execution_id VARCHAR(100),
+    loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- TH: Training Air Quality (histórico de calidad del aire - time series)
+CREATE TABLE IF NOT EXISTS ga_integration.th_training_air_quality (
+    id SERIAL PRIMARY KEY,
+    measured_at TIMESTAMP NOT NULL,
+    station_id INTEGER NOT NULL,
+    city_name VARCHAR(100),
+    country_code VARCHAR(2),
+    latitude NUMERIC(10,6),
+    longitude NUMERIC(10,6),
+    aqi INTEGER,
+    dominant_pollutant VARCHAR(10),
+    pm25 NUMERIC(10,2),
+    pm10 NUMERIC(10,2),
+    o3 NUMERIC(10,2),
+    no2 NUMERIC(10,2),
+    so2 NUMERIC(10,2),
+    co NUMERIC(10,2),
+    temperature NUMERIC(5,2),
+    humidity NUMERIC(5,2),
+    pressure NUMERIC(7,2),
+    wind_speed NUMERIC(6,2),
+    execution_id VARCHAR(100),
+    loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (measured_at, station_id)
+);
+
+-- Create indexes for performance
+CREATE INDEX IF NOT EXISTS idx_th_countries_code_iso3 ON ga_integration.th_training_countries(code_iso3);
+CREATE INDEX IF NOT EXISTS idx_th_countries_region ON ga_integration.th_training_countries(region);
+CREATE INDEX IF NOT EXISTS idx_th_weather_measured_at ON ga_integration.th_training_weather(measured_at);
+CREATE INDEX IF NOT EXISTS idx_th_weather_city ON ga_integration.th_training_weather(city);
+CREATE INDEX IF NOT EXISTS idx_th_air_quality_measured_at ON ga_integration.th_training_air_quality(measured_at);
+CREATE INDEX IF NOT EXISTS idx_th_air_quality_station ON ga_integration.th_training_air_quality(station_id);
+
+-- =========================================
 
 COMMENT ON SCHEMA ga_integration IS 'Esquema para integración de datos Temetra API';
 
@@ -356,9 +562,21 @@ COMMENT ON TABLE ga_integration.th_temetra_fdr IS 'Target/Histórico: Datos FDR 
 
 COMMENT ON TABLE ga_integration.sa_temetra_meters IS 'Staging: Master data de contadores';
 COMMENT ON TABLE ga_integration.th_temetra_meters IS 'Target: Master data de contadores consolidado';
-COMMANT ON TABLE ga_integration.th_lpwan_daily_backflow IS 'Target: Datos diarios LPWAN con backflow (volumen retroceso) - CRÍTICO para detección de fugas';
-COMMANT ON TABLE ga_integration.th_lpwan_periodic_indices IS 'Target: Índices periódicos LPWAN - complementa datos FDR';
-COMMANT ON TABLE ga_integration.th_lpwan_alarms IS 'Target: Alarmas LPWAN específicas de telemetría';
+COMMENT ON TABLE ga_integration.th_lpwan_daily_backflow IS 'Target: Datos diarios LPWAN con backflow (volumen retroceso) - CRÍTICO para detección de fugas';
+COMMENT ON TABLE ga_integration.th_lpwan_periodic_indices IS 'Target: Índices periódicos LPWAN - complementa datos FDR';
+COMMENT ON TABLE ga_integration.th_lpwan_alarms IS 'Target: Alarmas LPWAN específicas de telemetría';
+
+COMMENT ON TABLE ga_integration.sa_training_countries_basic IS 'Staging: Países - campos básicos';
+COMMENT ON TABLE ga_integration.sa_training_countries_geo IS 'Staging: Países - campos geográficos';
+COMMENT ON TABLE ga_integration.sa_training_countries_culture IS 'Staging: Países - campos culturales/políticos';
+COMMENT ON TABLE ga_integration.th_training_countries IS 'Target: Países consolidados con versionado';
+COMMENT ON TABLE ga_integration.sa_training_regions_stats IS 'Staging: Estadísticas por región';
+COMMENT ON TABLE ga_integration.th_training_regions_stats IS 'Target: Estadísticas por región consolidadas';
+COMMENT ON TABLE ga_integration.sa_training_weather IS 'Staging: Datos meteorológicos';
+COMMENT ON TABLE ga_integration.th_training_weather IS 'Target: Histórico de datos meteorológicos (time series)';
+COMMENT ON TABLE ga_integration.sa_training_air_quality IS 'Staging: Calidad del aire';
+COMMENT ON TABLE ga_integration.th_training_air_quality IS 'Target: Histórico de calidad del aire (time series)';
+
 -- =========================================
 -- GRANTS (si es necesario)
 -- =========================================

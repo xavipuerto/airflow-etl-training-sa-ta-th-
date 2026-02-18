@@ -1,0 +1,663 @@
+#!/usr/bin/env python3
+"""
+Training DAG: ETL Architecture with SA-TA-TH Pattern
+====================================================
+
+This DAG demonstrates a complete ETL flow using public APIs
+
+ LEARNING OBJECTIVE:
+Teach the SA-TA-TH layered architecture in an ETL process
+
+ KEY CONCEPTS:
+- SA (Staging Area): Landing zone with TRUNCATE+INSERT
+- TA (Auxiliary Tables): For joins and high-volume transformations (not used in this simple example)
+- TH (Historical Tables): Persistence layer with MERGE or INSERT append-only
+
+ WORKFLOW:
+1. Get All Countries: API /all -> SA + TH (Complete ETL with MERGE)
+2. Get Regions Stats: API /region/{region} -> Aggregation -> SA + TH (with MERGE)
+3. Get Air Quality: API /measurements -> SA + TH (time series, INSERT append-only)
+
+ DATA SOURCES:
+- REST Countries API: https://restcountries.com/ (countries data)
+- AQICN API: https://aqicn.org/api/ (air quality & weather)
+
+ USE CASES:
+- Master data with slow changes (countries) -> MERGE
+- Aggregations and statistics -> MERGE
+- Time series (air quality) -> INSERT append-only (prepared for TimescaleDB)
+- JOIN between different sources (countries + air quality)
+"""
+from datetime import datetime, timedelta
+from airflow import DAG
+from airflow.operators.python import PythonOperator
+import sys
+
+# Add scripts to path
+sys.path.insert(0, '/opt/airflow/scripts')
+
+# Import ETL functions (functional scripts) - Multiple SA tables
+from training_get_countries_basic import etl_get_countries_basic
+from training_get_countries_geo import etl_get_countries_geo
+from training_get_countries_culture import etl_get_countries_culture
+from training_merge_countries_to_th import etl_merge_countries_to_th
+from training_get_regions_stats import etl_get_regions_stats
+from training_get_weather import etl_get_weather_data
+from training_get_air_quality_aqicn import etl_get_air_quality
+
+
+# =============================================================================
+# DAG CONFIGURATION
+# =============================================================================
+
+default_args = {
+    'owner': 'training',
+    'depends_on_past': False,
+    'email_on_failure': False,
+    'email_on_retry': False,
+    'retries': 2,
+    'retry_delay': timedelta(minutes=5),
+}
+
+dag = DAG(
+    dag_id='training_etl_sa_ta_th',
+    default_args=default_args,
+    description=' Training: ETL with SA-TA-TH architecture using REST Countries API',
+    schedule=timedelta(minutes=5),  # Run every 5 minutes
+    start_date=datetime(2026, 2, 1),
+    catchup=False,
+    tags=['training', 'etl', 'sa-ta-th', 'rest-countries'],
+)
+
+
+# =============================================================================
+# WRAPPERS FOR AIRFLOW
+# =============================================================================
+
+def wrapper_get_countries_basic(**context):
+    """
+    Wrapper for ETL: Get Countries BASIC
+    
+    Executes loading of basic fields: API /all (8 fields) -> SA basic
+    """
+    execution_id = context['run_id']
+    print(f" Execution ID: {execution_id}")
+    
+    stats = etl_get_countries_basic(execution_id=execution_id)
+    context['task_instance'].xcom_push(key='countries_basic_stats', value=stats)
+    
+    print(f" Countries BASIC ETL completed: {stats['rows_inserted_sa']} countries")
+    return stats
+
+
+def wrapper_get_countries_geo(**context):
+    """
+    Wrapper for ETL: Get Countries GEO
+    
+    Executes loading of geographic fields: API /all (5 fields) -> SA geo
+    """
+    execution_id = context['run_id']
+    print(f" Execution ID: {execution_id}")
+    
+    stats = etl_get_countries_geo(execution_id=execution_id)
+    context['task_instance'].xcom_push(key='countries_geo_stats', value=stats)
+    
+    print(f" Countries GEO ETL completed: {stats['rows_inserted_sa']} countries")
+    return stats
+
+
+def wrapper_get_countries_culture(**context):
+    """
+    Wrapper for ETL: Get Countries CULTURE
+    
+    Executes loading of cultural/political fields: API /all (9 fields) -> SA culture
+    """
+    execution_id = context['run_id']
+    print(f" Execution ID: {execution_id}")
+    
+    stats = etl_get_countries_culture(execution_id=execution_id)
+    context['task_instance'].xcom_push(key='countries_culture_stats', value=stats)
+    
+    print(f" Countries CULTURE ETL completed: {stats['rows_inserted_sa']} countries")
+    return stats
+
+
+def wrapper_merge_countries_to_th(**context):
+    """
+    Wrapper for ETL: Merge Countries SA -> TH
+    
+    Combines 3 SA tables (basic + geo + culture) and performs MERGE into TH
+    """
+    execution_id = context['run_id']
+    print(f" Execution ID: {execution_id}")
+    
+    stats = etl_merge_countries_to_th(execution_id=execution_id)
+    context['task_instance'].xcom_push(key='countries_merged_stats', value=stats)
+    
+    print(f" MERGE completed: {stats['countries_inserted']} new, {stats['countries_updated']} updated")
+    return stats
+
+
+def wrapper_get_regions_stats(**context):
+    """
+    Wrapper for ETL: Get Regions Statistics
+    
+    Executes complete flow: API /region/{region} -> Aggregation -> SA -> TH
+    """
+    execution_id = context['run_id']
+    print(f" Execution ID: {execution_id}")
+    
+    stats = etl_get_regions_stats(execution_id=execution_id)
+    
+    if not stats['success']:
+        raise Exception(f" ETL Get Regions Stats failed: {stats['errors']}")
+    
+    # Save statistics to XCom
+    context['task_instance'].xcom_push(key='regions_stats', value=stats)
+    
+    print(f" ETL completed:")
+    print(f"    Regions processed: {', '.join(stats['regions_processed'])}")
+    print(f"    Countries extracted: {stats['countries_extracted']}")
+    print(f"    SA loaded: {stats['sa_loaded']}")
+    print(f"    TH inserted: {stats['th_inserted']}")
+    print(f"    TH updated: {stats['th_updated']}")
+    
+    return stats
+
+
+def wrapper_get_weather(**context):
+    """
+    Wrapper for ETL: Get Weather Data
+    
+    Executes complete flow: API /forecast -> SA -> TH (append-only)
+    Time series of weather data
+    """
+    execution_id = context['run_id']
+    print(f" Execution ID: {execution_id}")
+    
+    stats = etl_get_weather_data(execution_id=execution_id)
+    
+    if not stats['success']:
+        raise Exception(f" ETL Get Weather Data failed: {stats['errors']}")
+    
+    # Save statistics to XCom
+    context['task_instance'].xcom_push(key='weather_stats', value=stats)
+    
+    print(f" ETL completed:")
+    print(f"    Cities processed: {', '.join(stats['countries_processed'])}")
+    print(f"    Measurements extracted: {stats['measurements_extracted']}")
+    print(f"    SA loaded: {stats['sa_loaded']}")
+    print(f"    TH inserted: {stats['th_inserted']}")
+    print(f"    Duplicates ignored: {stats['th_duplicates']}")
+    print(f"    Total in TH: {stats['th_total']}")
+    
+    return stats
+
+
+def wrapper_get_air_quality(**context):
+    """
+    Wrapper para ETL: Get Air Quality from AQICN (World Air Quality Index)
+def wrapper_get_air_quality(**context):
+    """
+    Wrapper for ETL: Get Air Quality from AQICN (World Air Quality Index)
+    
+    Executes complete flow: AQICN API -> SA -> TH (append-only)
+    Time series of air quality data from capitals in th_training_countries
+    """
+    execution_id = context['run_id']
+    print(f" Execution ID: {execution_id}")
+    
+    stats = etl_get_air_quality(execution_id=execution_id)
+    
+    if stats.get('status') != 'SUCCESS':
+        raise Exception(f" ETL Get Air Quality failed: {stats.get('status', 'UNKNOWN')}")
+    
+    # Save statistics to XCom
+    context['task_instance'].xcom_push(key='air_quality_stats', value=stats)
+    
+    print(f" ETL completed:")
+    print(f"    Measurements extracted: {stats['measurements_extracted']}")
+    print(f"    SA loaded: {stats['rows_in_sa']}")
+    print(f"    TH inserted: {stats['th_inserted']}")
+    print(f"    Duplicates ignored: {stats['th_duplicates']}")
+    print(f"    Total in TH: {stats['th_total']}")
+    
+    return stats
+
+
+# =============================================================================
+# DEFINICION DE TAREAS
+# =============================================================================
+
+# Tarea 1a: Get Countries BASIC (campos basicos)
+task_get_countries_basic = PythonOperator(
+    task_id='get_countries_basic',
+    python_callable=wrapper_get_countries_basic,
+    dag=dag,
+    doc_md="""
+    ##  Get Countries BASIC (Paso 1/4)
+    
+    **Objetivo:** Cargar campos BASICOS de todos los paises
+    
+    **Endpoint:** `GET /all?fields=cca2,cca3,name,capital,region,subregion,area,population`
+    
+    **Flujo:**
+    1. EXTRACT: Llamar API (8 campos)
+    2. TRANSFORM: Normalizar nombres y estructuras
+    3. LOAD SA: TRUNCATE + INSERT en sa_training_countries_basic
+    
+    **Tabla destino:** `ga_integration.sa_training_countries_basic`
+    
+    **Por que separado?**
+    - La API REST Countries limita a 10 campos por request
+    - Dividimos en 3 tipos de campos: basic, geo, culture
+    - Permite paralelizar las 3 extracciones
+    - Patron educativo: multiples SA -> 1 TH
+    """,
+)
+
+# Tarea 1b: Get Countries GEO (campos geograficos)
+task_get_countries_geo = PythonOperator(
+    task_id='get_countries_geo',
+    python_callable=wrapper_get_countries_geo,
+    dag=dag,
+    doc_md="""
+    ##   Get Countries GEO (Paso 2/4)
+    
+    **Objetivo:** Cargar campos GEOGRAFICOS de todos los paises
+    
+    **Endpoint:** `GET /all?fields=cca2,cca3,latlng,landlocked,borders`
+    
+    **Flujo:**
+    1. EXTRACT: Llamar API (5 campos)
+    2. TRANSFORM: Normalizar coordenadas y fronteras
+    3. LOAD SA: TRUNCATE + INSERT en sa_training_countries_geo
+    
+    **Tabla destino:** `ga_integration.sa_training_countries_geo`
+    
+    **Datos interesantes:**
+    - landlocked: paises sin salida al mar (Suiza, Bolivia, etc.)
+    - borders: lista de paises fronterizos (JSON array)
+    - latlng: coordenadas para mapas
+    """,
+)
+
+# Tarea 1c: Get Countries CULTURE (campos culturales/politicos)
+task_get_countries_culture = PythonOperator(
+    task_id='get_countries_culture',
+    python_callable=wrapper_get_countries_culture,
+    dag=dag,
+    doc_md="""
+    ##  Get Countries CULTURE (Paso 3/4)
+    
+    **Objetivo:** Cargar campos CULTURALES/POLITICOS de todos los paises
+    
+    **Endpoint:** `GET /all?fields=cca2,cca3,languages,currencies,timezones,flags,independent,unMember,ccn3`
+    
+    **Flujo:**
+    1. EXTRACT: Llamar API (9 campos)
+    2. TRANSFORM: Normalizar idiomas, monedas, zonas horarias
+    3. LOAD SA: TRUNCATE + INSERT en sa_training_countries_culture
+    
+    **Tabla destino:** `ga_integration.sa_training_countries_culture`
+    
+    **Datos interesantes:**
+    - languages: idiomas oficiales (JSON object)
+    - currencies: monedas (JSON object)
+    - timezones: zonas horarias (JSON array)
+    - independent: si es pais independiente
+    - unMember: si es miembro de la ONU
+    """,
+)
+
+# Tarea 1d: Merge Countries (combinar 3 SA -> TH)
+task_merge_countries_to_th = PythonOperator(
+    task_id='merge_countries_to_th',
+    python_callable=wrapper_merge_countries_to_th,
+    dag=dag,
+    doc_md="""
+    ## Merge Countries SA -> TH (Step 4/4 - FINAL)
+    
+    **Goal:** Combine 3 Staging Areas and perform MERGE into TH
+    
+    **Sources:**
+    - sa_training_countries_basic (8 fields)
+    - sa_training_countries_geo (5 fields)
+    - sa_training_countries_culture (9 fields)
+    
+    **Flow:**
+    1. READ: JOIN the 3 SA tables by code_iso3
+    2. MERGE TH: UPSERT into th_training_countries (22 total fields)
+    
+    **Target table:** `ga_integration.th_training_countries`
+    
+    **ADVANCED ETL CONCEPT:**
+    This pattern demonstrates:
+    - Multiple SA -> 1 TH
+    - JOIN staging areas before MERGE
+    - Progressive data enrichment
+    - Parallelized extractions + centralized MERGE
+    
+    **Advantages:**
+    - API calls in parallel
+    - Complies with API 10-field limit
+    - All fields available in TH
+    - Reusable pattern for other cases
+    """,
+)
+
+# Tarea 2: Get Regions Statistics (ETL completo con agregacion)
+task_get_regions_stats = PythonOperator(
+    task_id='get_regions_stats',
+    python_callable=wrapper_get_regions_stats,
+    dag=dag,
+    doc_md="""
+    ##  Get Regions Statistics (ETL Completo + Agregacion)
+    
+    **Objetivo:** Obtener estadisticas agregadas por region geografica
+    
+    **Endpoint:** `GET /region/{region}` (multiples llamadas)
+    
+    **Regiones:** africa, americas, asia, europe, oceania
+    
+    **Flujo:**
+    1. EXTRACT: Llamar a API /region/{region} para cada region
+    2. TRANSFORM: Calcular agregaciones (COUNT, SUM, AVG)
+       - Total paises por region
+       - Poblacion total y promedio
+       - Area total
+       - Conteo de paises landlocked, independientes, miembros ONU
+    3. LOAD SA: TRUNCATE + INSERT en sa_training_regions_stats
+    4. MERGE TH: UPSERT en th_training_regions_stats
+    
+    **Tablas afectadas:**
+    - `ga_integration.sa_training_regions_stats` (SA - TRUNCATE+INSERT)
+    - `ga_integration.th_training_regions_stats` (TH - UPSERT)
+    
+    **Por que este enfoque?**
+    - Demuestra agregaciones y transformaciones complejas
+    - Multiples llamadas a API con parametros diferentes
+    - Calculo de metricas derivadas
+    """,
+)
+
+# Tarea 3: Get Weather Data (ETL completo - Series Temporales)
+task_get_weather = PythonOperator(
+    task_id='get_weather',
+    python_callable=wrapper_get_weather,
+    dag=dag,
+    doc_md="""
+    ##  Get Weather Data (ETL Series Temporales)
+    
+    **Objetivo:** Obtener datos meteorologicos de capitales de paises
+    
+    **Endpoint:** `GET /forecast` (Open-Meteo API)
+    
+    **Fuente:** https://open-meteo.com/ (API publica gratuita, sin API key)
+    
+    **Flujo:**
+    1. EXTRACT: Llamar a API /forecast para 10 capitales
+       - Datos: temperatura, humedad, precipitacion, viento
+    2. TRANSFORM: Normalizar timestamps y valores
+    3. LOAD SA: TRUNCATE + INSERT en sa_training_weather
+    4. LOAD TH: INSERT append-only en th_training_weather
+    
+    **Tablas afectadas:**
+    - `ga_integration.sa_training_weather` (SA - TRUNCATE+INSERT)
+    - `ga_integration.th_training_weather` (TH - INSERT append-only)
+    
+    **Diferencias con otras tareas:**
+    -  Series temporales (timestamp como partition key)
+    -  Estrategia append-only (INSERT, no MERGE)
+    -  Constraint UNIQUE para evitar duplicados
+    -  Preparada para TimescaleDB hypertables
+    -  JOIN con paises (country code)
+    
+    **Por que append-only?**
+    - Cada medicion es un punto unico en el tiempo
+    - No tiene sentido "actualizar" una medicion pasada
+    - Optimizado para queries de series temporales
+    - Compatible con TimescaleDB
+    """,
+)
+
+# Tarea 4: Get Air Quality (ETL completo - Series Temporales AQICN)
+task_get_air_quality = PythonOperator(
+    task_id='get_air_quality',
+    python_callable=wrapper_get_air_quality,
+    dag=dag,
+    doc_md=""" ##  Get Air Quality Data (ETL Series Temporales - AQICN)
+    
+    **Objetivo:** Obtener datos de calidad del aire en tiempo real
+    
+    **Fuente:** World Air Quality Index (AQICN) - https://aqicn.org/api/
+    
+    **Ciudades monitoreadas:** beijing, shanghai, delhi, london, paris, madrid, new-york, los-angeles, tokyo, seoul
+    
+    **Flujo:**
+    1. EXTRACT: Llamar a AQICN API /feed/{city} para 10 ciudades
+       - Datos: AQI, PM2.5, PM10, O3, NO2, SO2, CO, temperatura, humedad
+    2. TRANSFORM: Normalizar timestamps y valores
+    3. LOAD SA: TRUNCATE + INSERT en sa_training_air_quality
+    4. LOAD TH: INSERT append-only en th_training_air_quality
+    
+    **Tablas afectadas:**
+    - `ga_integration.sa_training_air_quality` (SA - TRUNCATE+INSERT)
+    - `ga_integration.th_training_air_quality` (TH - INSERT append-only)
+    
+    **Caracteristicas:**
+    -  API gratuita con 1,000 req/s quota
+    -  Token-based authentication (AQICN_API_TOKEN)
+    -  Datos en tiempo real de estaciones oficiales
+    -  Series temporales con append-only pattern
+    -  Constraint UNIQUE (measured_at, station_id)
+    -  Indice temporal para queries eficientes
+    
+    **Metricas monitoreadas:**
+    - AQI: Air Quality Index (0-500)
+    - PM2.5, PM10: Particulas en suspension
+    - O3, NO2, SO2, CO: Gases contaminantes
+    - Temperatura, humedad, presion atmosferica
+    
+    **Interpretacion AQI:**
+    - 0-50: Good (Verde)
+    - 51-100: Moderate (Amarillo)
+    - 101-150: Unhealthy for Sensitive Groups (Naranja)
+    - 151-200: Unhealthy (Rojo)
+    - 201-300: Very Unhealthy (Purpura)
+    - 301+: Hazardous (Marron)
+    """,
+)
+
+# =============================================================================
+# DEPENDENCIAS
+# =============================================================================
+
+# Flujo completo:
+# 1. Extraer 3 tipos de campos en paralelo (basic, geo, culture)
+# 2. Combinar las 3 SA en TH (merge)
+# 3. Ejecutar regions y weather en paralelo (usan datos de TH countries)
+
+# PASO 1: Extracciones en paralelo (3 API calls simultaneos)
+[task_get_countries_basic, task_get_countries_geo, task_get_countries_culture] >> task_merge_countries_to_th
+
+# PASO 2: Despues del MERGE, ejecutar aggregaciones y series temporales en paralelo
+task_merge_countries_to_th >> [task_get_regions_stats, task_get_weather, task_get_air_quality]
+
+# Esto crea este grafo:
+#
+#    
+#    get_countries    
+#       _basic        
+#    
+#             
+#    
+#    get_countries            
+#       _geo          ->merge_        
+#            countries_    
+#                              to_th         
+#            
+#    get_countries                   
+#       _culture      
+#    
+#             
+#                               
+#                                                          
+#                          
+#                        get_regions   get_weather   get_air     
+#                           _stats                     _quality  
+#                          
+#
+# Ventajas:
+# 1. Paralelizacion maxima: 3 API calls simultaneos para countries
+# 2. Cumple limite de 10 campos de REST Countries API
+# 3. Todos los campos disponibles (22 campos totales)
+# 4. Patron educativo: multiples SA -> 1 TH -> multiples analisis
+# 5. Optimiza tiempo total de ejecucion
+# 6. Multiples fuentes de datos: REST Countries, Open-Meteo, AQICN
+
+
+# =============================================================================
+# DOCUMENTACION DEL DAG
+# =============================================================================
+
+dag.doc_md = """
+# Training DAG: ETL Architecture with SA-TA-TH Pattern
+
+## Learning Objective
+
+This DAG teaches the **SA-TA-TH layered architecture** using **functional scripts**
+that group code by business objective (API endpoint).
+
+## Architecture: Functional Scripts
+
+Instead of separating by technical layer (SA vs TH), we organize by **functional objective**:
+
+**Functional Approach (USED here):**
+- training_get_countries_basic.py - GET /all (basic fields -> SA -> TH)
+- training_get_countries_geo.py - GET /all (geo fields -> SA -> TH)
+- training_get_countries_culture.py - GET /all (culture fields -> SA -> TH)
+- training_merge_countries_to_th.py - Merge 3 SA tables -> TH
+- training_get_regions_stats.py - GET /region/{} (SA -> TH + aggregation)
+
+**Advantages:**
+- One script = one complete objective (cohesion)
+- Easy to test independently
+- Lower coupling between components
+- Easier to maintain and extend
+
+## Key Concepts
+
+### SA - Staging Area (Landing Zone)
+- **Purpose:** Temporary layer for landing external data
+- **Strategy:** TRUNCATE + INSERT (full refresh)
+- **Characteristics:**
+  - No complex constraints (no PKs, FKs)
+  - Optimized for fast loading
+  - Can be truncated safely
+  - Error isolation
+
+### TA - Auxiliary Tables
+- **Purpose:** Intermediate tables for:
+  - High volume data that does not fit in memory
+  - Complex joins between multiple sources
+  - Temporary aggregations
+- **Note:** Not required in simple examples, only when there's high volume or complex joins
+
+### TH - Historical Tables
+- **Purpose:** Persistence and querying
+- **Strategy:** MERGE (UPSERT)
+- **Characteristics:**
+  - Constraints (PKs, FKs, indexes)
+  - Version control (first_loaded_at, last_updated_at, version)
+  - Optimized for queries
+  - Maintains change history
+
+## DAG Workflow
+
+### Task Flow: Get Countries (Split into 3 parallel SA loads)
+1. get_countries_basic -> SA basic fields
+2. get_countries_geo -> SA geo fields  
+3. get_countries_culture -> SA culture fields
+4. merge_countries_to_th -> JOIN 3 SA tables -> MERGE into TH
+
+### Task: Get Regions Stats (Parallel)
+GET /region/{africa,americas,asia,europe,oceania} -> Aggregate -> SA -> TH
+
+### Task: Get Weather (Parallel)
+Weather API -> SA -> TH (time series, append-only)
+
+### Task: Get Air Quality (Parallel)
+AQICN API -> SA -> TH (time series, append-only)
+
+## Data Sources
+
+- **REST Countries API:** https://restcountries.com/ (country master data)
+- **AQICN API:** https://aqicn.org/api/ (air quality & weather)
+
+## Created Tables
+
+### Countries
+- **sa_training_countries_basic** - Staging basic fields (TRUNCATE+INSERT)
+- **sa_training_countries_geo** - Staging geo fields (TRUNCATE+INSERT)
+- **sa_training_countries_culture** - Staging culture fields (TRUNCATE+INSERT)
+- **th_training_countries** - Historical countries (UPSERT with versioning)
+
+### Regional Stats
+- **sa_training_regions_stats** - Staging regional stats (TRUNCATE+INSERT)
+- **th_training_regions_stats** - Historical stats (UPSERT with versioning)
+
+### Time Series
+- **sa_training_weather** - Staging weather data
+- **th_training_weather** - Historical weather (append-only)
+- **sa_training_air_quality** - Staging air quality
+- **th_training_air_quality** - Historical air quality (append-only)
+
+## How to Use
+
+### 1. Start the environment
+```
+docker-compose up -d
+```
+
+### 2. Access Airflow UI
+- Go to: http://localhost:8080
+- Login: airflow / airflow
+- Enable DAG: training_etl_sa_ta_th
+- Trigger manually or wait for schedule
+
+### 3. View Logs
+- Click on task -> View Log
+- You will see the complete ETL output
+
+## Useful Queries
+
+See README.md for detailed SQL queries and hands-on exercises.
+
+## Independent Testing
+
+You can run scripts directly for testing in the Airflow scheduler container.
+
+## Proposed Exercises
+
+1. Add a new functional script for a different API endpoint
+2. Implement SCD Type 2 to maintain full change history
+3. Add alerts for significant population changes
+4. Create monitoring tasks to compare SA vs TH counts
+5. Implement data quality checks
+
+## Project Files
+
+- dags/training_etl_sa_ta_th.py - This DAG
+- scripts/training_*.py - Functional ETL scripts
+- init-db/01-init-schema.sql - Table definitions
+
+## References
+
+- [Airflow Documentation](https://airflow.apache.org/)
+- [REST Countries API](https://restcountries.com/)
+- [AQICN API](https://aqicn.org/api/)
+- [PostgreSQL UPSERT](https://www.postgresql.org/docs/current/sql-insert.html#SQL-ON-CONFLICT)
+"""
+
+print("DAG 'training_etl_sa_ta_th' loaded successfully")

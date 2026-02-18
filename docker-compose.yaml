@@ -117,7 +117,7 @@ services:
       - postgres-goaigua-volume:/var/lib/postgresql/data
       - ./init-db:/docker-entrypoint-initdb.d
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "goaigua"]
+      test: ["CMD", "pg_isready", "-U", "goaigua", "-d", "goaigua_data"]
       interval: 10s
       retries: 5
       start_period: 5s
