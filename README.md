@@ -38,6 +38,16 @@ Practical exercises using public APIs (REST Countries, AQICN weather & air quali
 └─────────────────┘
 ```
 
+### 📚 Theoretical Foundation
+
+This architecture is based on **Ralph Kimball's data warehouse principles** from *"The Data Warehouse ETL Toolkit"*. The SA-TA-TH pattern implements key Kimball concepts:
+
+- **Staging Area (SA)**: Decouples source systems from the warehouse, enabling **idempotent reprocessing** (full refresh with TRUNCATE+INSERT)
+- **Transformation Layer (TA)**: Intermediate zone for business logic, ensuring **data lineage and traceability**
+- **Historical Layer (TH)**: Implements **Slowly Changing Dimensions (SCD Type 2)** with versioning (`version`, `first_loaded_at`, `last_updated_at`) for **audit trail and time-travel queries**
+
+This layered approach guarantees **process recoverability**, **data quality**, and **end-to-end observability** in ETL pipelines.
+
 ## 📁 Project Structure
 
 ```
