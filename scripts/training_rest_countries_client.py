@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """
-Cliente HTTP para REST Countries API - Formación ETL
+HTTP Client for REST Countries API - ETL Training
 ==================================================
 
-API Pública: https://restcountries.com/
-Sin autenticación, ideal para aprendizaje
+Public API: https://restcountries.com/
+No authentication, ideal for learning
 
-Este cliente demuestra:
-- Manejo de requests HTTP
-- Política de reintentos
-- Logging estructurado
-- Manejo de errores
+This client demonstrates:
+- HTTP requests handling
+- Retry policy
+- Structured logging
+- Error handling
 """
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ def now_ms() -> int:
 
 @dataclass
 class CallResult:
-    """Resultado de una llamada HTTP"""
+    """Result of an HTTP call"""
     ok: bool
     method: str
     url: str
@@ -50,11 +50,11 @@ class CallResult:
 
 class RestCountriesClient:
     """
-    Cliente HTTP para REST Countries API
+    HTTP Client for REST Countries API
     
-    Política de reintentos:
-    - Retry en: 429 (rate limit), 500, 502, 503, 504
-    - Máximo 3 intentos
+    Retry policy:
+    - Retry on: 429 (rate limit), 500, 502, 503, 504
+    - Maximum 3 attempts
     - Backoff: 2s, 4s, 8s
     """
     
@@ -76,7 +76,7 @@ class RestCountriesClient:
         })
     
     def _should_retry(self, status: int) -> bool:
-        """Determina si debemos reintentar según el status code"""
+        """Determines if we should retry based on status code"""
         return status in (429, 500, 502, 503, 504)
     
     def _call(
@@ -87,16 +87,16 @@ class RestCountriesClient:
         json_data: Optional[Dict[str, Any]] = None,
     ) -> CallResult:
         """
-        Ejecuta una llamada HTTP con política de reintentos
+        Execute an HTTP call with retry policy
         
         Args:
             method: GET, POST, PUT, DELETE
             endpoint: /all, /name/{name}, etc.
             params: Query parameters
-            json_data: Body JSON (para POST/PUT)
+            json_data: JSON body (for POST/PUT)
             
         Returns:
-            CallResult con el resultado
+            CallResult with the result
         """
         url = f"{self.base_url}{endpoint}"
         attempt = 0
@@ -117,7 +117,7 @@ class RestCountriesClient:
                 elapsed_ms = now_ms() - start_ms
                 json_obj, text = self._safe_json(response)
                 
-                # Si es exitoso, retornar
+                # If successful, return
                 if 200 <= response.status_code < 300:
                     return CallResult(
                         ok=True,
@@ -129,14 +129,14 @@ class RestCountriesClient:
                         text=text,
                     )
                 
-                # Si debemos reintentar
+                # If we should retry
                 if self._should_retry(response.status_code) and attempt < self.max_retries:
                     delay = self.retry_delay * (2 ** (attempt - 1))
-                    print(f"⚠️  Intento {attempt}/{self.max_retries} falló: {response.status_code}. Reintentando en {delay}s...")
+                    print(f"⚠️  Attempt {attempt}/{self.max_retries} failed: {response.status_code}. Retrying in {delay}s...")
                     time.sleep(delay)
                     continue
                 
-                # Error definitivo
+                # Final error
                 return CallResult(
                     ok=False,
                     method=method,
@@ -150,14 +150,14 @@ class RestCountriesClient:
             except Exception as e:
                 elapsed_ms = now_ms() - start_ms
                 
-                # Reintentar en caso de excepciones de red
+                # Retry on network exceptions
                 if attempt < self.max_retries:
                     delay = self.retry_delay * (2 ** (attempt - 1))
-                    print(f"⚠️  Excepción en intento {attempt}/{self.max_retries}: {e}. Reintentando en {delay}s...")
+                    print(f"⚠️  Exception on attempt {attempt}/{self.max_retries}: {e}. Retrying in {delay}s...")
                     time.sleep(delay)
                     continue
                 
-                # Excepción definitiva
+                # Final exception
                 return CallResult(
                     ok=False,
                     method=method,
@@ -168,7 +168,7 @@ class RestCountriesClient:
                     text=str(e),
                 )
         
-        # No debería llegar aquí, pero por seguridad
+        # Should not reach here, but for safety
         return CallResult(
             ok=False,
             method=method,
@@ -180,233 +180,233 @@ class RestCountriesClient:
         )
     
     def _safe_json(self, resp: requests.Response) -> Tuple[Optional[Any], str]:
-        """Intenta parsear JSON, si falla retorna None y el texto"""
+        """Try to parse JSON, if it fails return None and text"""
         try:
             return resp.json(), resp.text
         except Exception:
             return None, resp.text
     
     # =========================================================================
-    # MÉTODOS DE LA API - Múltiples llamadas para obtener todos los campos
+    # API METHODS - Multiple calls to get all fields
     # =========================================================================
-    # La API REST Countries limita a 10 campos por request.
-    # Para obtener todos los datos, hacemos múltiples llamadas con diferentes fields.
+    # The REST Countries API limits to 10 fields per request.
+    # To get all data, we make multiple calls with different fields.
     
     def get_all_countries_basic(self) -> CallResult:
         """
-        GET /all - Obtiene campos BÁSICOS de países (8 campos)
+        GET /all - Get BASIC fields of countries (8 fields)
         
-        Campos: cca2, cca3, name, capital, region, subregion, area, population
+        Fields: cca2, cca3, name, capital, region, subregion, area, population
         
         Returns:
-            CallResult con lista de países con campos básicos
+            CallResult with list of countries with basic fields
         """
         fields = 'cca2,cca3,name,capital,region,subregion,area,population'
         return self._call('GET', '/all', params={'fields': fields})
     
     def get_all_countries_geo(self) -> CallResult:
         """
-        GET /all - Obtiene campos GEOGRÁFICOS de países (5 campos)
+        GET /all - Get GEOGRAPHIC fields of countries (5 fields)
         
-        Campos: cca2, cca3, latlng, landlocked, borders
+        Fields: cca2, cca3, latlng, landlocked, borders
         
         Returns:
-            CallResult con lista de países con campos geográficos
+            CallResult with list of countries with geographic fields
         """
         fields = 'cca2,cca3,latlng,landlocked,borders'
         return self._call('GET', '/all', params={'fields': fields})
     
     def get_all_countries_culture(self) -> CallResult:
         """
-        GET /all - Obtiene campos CULTURALES/ECONÓMICOS de países (6 campos)
+        GET /all - Get CULTURAL/ECONOMIC fields of countries (6 fields)
         
-        Campos: cca2, cca3, languages, currencies, timezones, flags
+        Fields: cca2, cca3, languages, currencies, timezones, flags
         
         Returns:
-            CallResult con lista de países con campos culturales
+            CallResult with list of countries with cultural fields
         """
         fields = 'cca2,cca3,languages,currencies,timezones,flags'
         return self._call('GET', '/all', params={'fields': fields})
     
     def get_all_countries_political(self) -> CallResult:
         """
-        GET /all - Obtiene campos POLÍTICOS de países (5 campos)
+        GET /all - Get POLITICAL fields of countries (5 fields)
         
-        Campos: cca2, cca3, independent, unMember, ccn3
+        Fields: cca2, cca3, independent, unMember, ccn3
         
         Returns:
-            CallResult con lista de países con campos políticos
+            CallResult with list of countries with political fields
         """
         fields = 'cca2,cca3,independent,unMember,ccn3'
         return self._call('GET', '/all', params={'fields': fields})
     
     def get_all_countries(self) -> CallResult:
         """
-        GET /all - Obtiene campos básicos de países (DEPRECATED - usar métodos específicos)
+        GET /all - Get basic fields of countries (DEPRECATED - use specific methods)
         
-        NOTA: Este método usa solo 10 campos por compatibilidad.
-        Para obtener todos los datos, usar:
+        NOTE: This method uses only 10 fields for compatibility.
+        To get all data, use:
         - get_all_countries_basic()
         - get_all_countries_geo()
         - get_all_countries_culture()
         - get_all_countries_political()
         
         Returns:
-            CallResult con lista de países con campos básicos
+            CallResult with list of countries with basic fields
         """
         fields = 'cca2,cca3,name,capital,region,subregion,area,population'
         return self._call('GET', '/all', params={'fields': fields})
     
     def get_country_by_name(self, name: str) -> CallResult:
         """
-        GET /name/{name} - Busca países por nombre
+        GET /name/{name} - Search countries by name
         
         Args:
-            name: Nombre del país (puede ser parcial)
+            name: Country name (can be partial)
             
         Returns:
-            CallResult con países que coinciden
+            CallResult with matching countries
         """
         fields = 'cca2,cca3,name,capital,region,subregion,latlng,area,population,flags'
         return self._call('GET', f'/name/{name}', params={'fields': fields})
     
     def get_countries_by_region(self, region: str) -> CallResult:
         """
-        GET /region/{region} - Obtiene países por región
+        GET /region/{region} - Get countries by region
         
         Args:
             region: africa, americas, asia, europe, oceania
             
         Returns:
-            CallResult con países de la región
+            CallResult with countries from the region
         """
         fields = 'cca2,cca3,name,capital,region,subregion,latlng,area,population,flags'
         return self._call('GET', f'/region/{region}', params={'fields': fields})
     
     def get_countries_by_subregion(self, subregion: str) -> CallResult:
         """
-        GET /subregion/{subregion} - Obtiene países por subregión
+        GET /subregion/{subregion} - Get countries by subregion
         
         Args:
             subregion: Southern Europe, South America, etc.
             
         Returns:
-            CallResult con países de la subregión
+            CallResult with countries from the subregion
         """
         fields = 'cca2,cca3,name,capital,region,subregion,latlng,area,population,flags'
         return self._call('GET', f'/subregion/{subregion}', params={'fields': fields})
     
     def get_country_by_code(self, code: str) -> CallResult:
         """
-        GET /alpha/{code} - Obtiene país por código ISO
+        GET /alpha/{code} - Get country by ISO code
         
         Args:
-            code: Código ISO 2 o 3 letras (ES, ESP, USA, US, etc.)
+            code: ISO code 2 or 3 letters (ES, ESP, USA, US, etc.)
             
         Returns:
-            CallResult con datos del país
+            CallResult with country data
         """
         fields = 'cca2,cca3,name,capital,region,subregion,latlng,area,population,flags'
         return self._call('GET', f'/alpha/{code}', params={'fields': fields})
 
 
 # =============================================================================
-# FUNCIONES DE UTILIDAD
+# UTILITY FUNCTIONS
 # =============================================================================
 
 def extract_country_data(country: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Extrae y normaliza datos relevantes de un país
+    Extract and normalize relevant country data
     
-    Esta función demuestra la fase de TRANSFORM en ETL:
-    - Extraer campos anidados
-    - Manejar valores nulos
-    - Normalizar formatos
+    This function demonstrates the TRANSFORM phase in ETL:
+    - Extract nested fields
+    - Handle null values
+    - Normalize formats
     
-    NOTA: La API REST Countries limita a 10 campos máximo.
-    Campos disponibles: cca2, cca3, name, capital, region, subregion, latlng, area, population, flags
-    Campos NO disponibles (NULL): ccn3, landlocked, languages, currencies, timezones, borders, independent, unMember
+    NOTE: The REST Countries API limits to 10 fields maximum.
+    Available fields: cca2, cca3, name, capital, region, subregion, latlng, area, population, flags
+    NOT available fields (NULL): ccn3, landlocked, languages, currencies, timezones, borders, independent, unMember
     
     Args:
-        country: Objeto JSON del país de la API
+        country: JSON object from API
         
     Returns:
-        Dict con datos normalizados
+        Dict with normalized data
     """
     return {
-        # Identificadores (disponibles)
+        # Identifiers (available)
         'code_iso2': country.get('cca2'),
         'code_iso3': country.get('cca3'),
-        'code_numeric': None,  # No disponible con fields limit
+        'code_numeric': None,  # Not available with fields limit
         
-        # Nombres (disponibles)
+        # Names (available)
         'name_common': country.get('name', {}).get('common'),
         'name_official': country.get('name', {}).get('official'),
         'name_native': json.dumps(country.get('name', {}).get('nativeName', {})),
         
-        # Geografía (disponibles)
+        # Geography (available)
         'capital': json.dumps(country.get('capital', [])),
         'region': country.get('region'),
         'subregion': country.get('subregion'),
         'latitude': country.get('latlng', [None, None])[0],
         'longitude': country.get('latlng', [None, None])[1],
         'area': country.get('area'),
-        'landlocked': None,  # No disponible con fields limit
+        'landlocked': None,  # Not available with fields limit
         
-        # Población (disponible)
+        # Population (available)
         'population': country.get('population'),
         
-        # Idiomas y monedas (NO disponibles)
+        # Languages and currencies (NOT available)
         'languages': None,
         'currencies': None,
         
-        # Otros (NO disponibles)
+        # Other (NOT available)
         'timezones': None,
         'borders': None,
         'flag_emoji': None,
-        'flag_svg': country.get('flags', {}).get('svg'),  # Disponible
+        'flag_svg': country.get('flags', {}).get('svg'),  # Available
         
-        # Metadata (NO disponibles)
+        # Metadata (NOT available)
         'independent': None,
         'un_member': None,
     }
 
 
 if __name__ == '__main__':
-    # Ejemplo de uso
+    # Usage example
     print("=" * 80)
     print("🌍 REST Countries API Client - Demo")
     print("=" * 80)
     
     client = RestCountriesClient()
     
-    # Ejemplo 1: Obtener información de España
-    print("\n📍 Ejemplo 1: Obtener información de España")
+    # Example 1: Get information about Spain
+    print("\n📍 Example 1: Get information about Spain")
     print("-" * 80)
     result = client.get_country_by_code('ESP')
     print(result)
     if result.ok:
         country = result.json_obj[0]
         data = extract_country_data(country)
-        print(f"\n🏴 País: {data['name_common']}")
+        print(f"\n🏴 Country: {data['name_common']}")
         print(f"   Capital: {data['capital']}")
-        print(f"   Región: {data['region']} - {data['subregion']}")
-        print(f"   Población: {data['population']:,}")
-        print(f"   Área: {data['area']:,.0f} km²")
+        print(f"   Region: {data['region']} - {data['subregion']}")
+        print(f"   Population: {data['population']:,}")
+        print(f"   Area: {data['area']:,.0f} km²")
     
-    # Ejemplo 2: Países de Europa
-    print("\n\n📍 Ejemplo 2: Países de Europa")
+    # Example 2: Countries in Europe
+    print("\n\n📍 Example 2: Countries in Europe")
     print("-" * 80)
     result = client.get_countries_by_region('europe')
     print(result)
     if result.ok:
         countries = result.json_obj
-        print(f"\n✅ Se encontraron {len(countries)} países europeos")
-        print("   Primeros 5:")
+        print(f"\n✅ Found {len(countries)} European countries")
+        print("   First 5:")
         for country in countries[:5]:
             data = extract_country_data(country)
             print(f"   - {data['name_common']} ({data['code_iso2']})")
     
     print("\n" + "=" * 80)
-    print("✅ Demo completada")
+    print("✅ Demo completed")
     print("=" * 80)

@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """
-Cliente HTTP para Open-Meteo API - Formación ETL
+HTTP Client for Open-Meteo API - ETL Training
 ===============================================
 
-API Pública: https://open-meteo.com/
-Sin autenticación, ideal para aprendizaje
+Public API: https://open-meteo.com/
+No authentication, ideal for learning
 
-Este cliente demuestra:
-- Manejo de requests HTTP
-- Política de reintentos
-- Logging estructurado
-- Series temporales (clima)
+This client demonstrates:
+- HTTP requests handling
+- Retry policy
+- Structured logging
+- Time series (weather)
 """
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ def now_ms() -> int:
 
 @dataclass
 class CallResult:
-    """Resultado de una llamada HTTP"""
+    """Result of an HTTP call"""
     ok: bool
     method: str
     url: str
@@ -51,13 +51,11 @@ class CallResult:
 
 class OpenMeteoClient:
     """
-    Cliente HTTP para Open-Meteo API
+    HTTP Client for Open-Meteo API
     
-    Política de reintentos:
-    - Retry en: 429 (rate limit), 500, 502, 503, 504
-    - Máximo 3 intentos
-    - Backoff: 2s, 4s, 8s
-    """
+    Retry policy:
+    - Retry on: 429 (rate limit), 500, 502, 503, 504
+    - Maximum 3 attempts
     
     def __init__(
         self,
@@ -77,7 +75,7 @@ class OpenMeteoClient:
         })
     
     def _should_retry(self, status: int) -> bool:
-        """Determina si debemos reintentar según el status code"""
+        """Determines if we should retry based on status code"""
         return status in (429, 500, 502, 503, 504)
     
     def _call(
@@ -87,7 +85,7 @@ class OpenMeteoClient:
         params: Optional[Dict[str, Any]] = None,
     ) -> CallResult:
         """
-        Ejecuta una llamada HTTP con política de reintentos
+        Execute an HTTP call with retry policy
         
         Args:
             method: GET
@@ -95,7 +93,7 @@ class OpenMeteoClient:
             params: Query parameters
             
         Returns:
-            CallResult con el resultado
+            CallResult with the result
         """
         url = f"{self.base_url}{endpoint}"
         attempt = 0
@@ -115,7 +113,7 @@ class OpenMeteoClient:
                 elapsed_ms = now_ms() - start_ms
                 json_obj, text = self._safe_json(response)
                 
-                # Si es exitoso, retornar
+                # If successful, return
                 if 200 <= response.status_code < 300:
                     return CallResult(
                         ok=True,
@@ -127,14 +125,14 @@ class OpenMeteoClient:
                         text=text,
                     )
                 
-                # Si debemos reintentar
+                # If we should retry
                 if self._should_retry(response.status_code) and attempt < self.max_retries:
                     delay = self.retry_delay * (2 ** (attempt - 1))
-                    print(f"⚠️  Intento {attempt}/{self.max_retries} falló: {response.status_code}. Reintentando en {delay}s...")
+                    print(f"⚠️  Attempt {attempt}/{self.max_retries} failed: {response.status_code}. Retrying in {delay}s...")
                     time.sleep(delay)
                     continue
                 
-                # Error definitivo
+                # Final error
                 return CallResult(
                     ok=False,
                     method=method,
@@ -148,14 +146,14 @@ class OpenMeteoClient:
             except Exception as e:
                 elapsed_ms = now_ms() - start_ms
                 
-                # Reintentar en caso de excepciones de red
+                # Retry on network exceptions
                 if attempt < self.max_retries:
                     delay = self.retry_delay * (2 ** (attempt - 1))
-                    print(f"⚠️  Excepción en intento {attempt}/{self.max_retries}: {e}. Reintentando en {delay}s...")
+                    print(f"⚠️  Exception on attempt {attempt}/{self.max_retries}: {e}. Retrying in {delay}s...")
                     time.sleep(delay)
                     continue
                 
-                # Excepción definitiva
+                # Final exception
                 return CallResult(
                     ok=False,
                     method=method,
@@ -166,7 +164,7 @@ class OpenMeteoClient:
                     text=str(e),
                 )
         
-        # No debería llegar aquí, pero por seguridad
+        # Should not reach here, but for safety
         return CallResult(
             ok=False,
             method=method,
@@ -178,26 +176,26 @@ class OpenMeteoClient:
         )
     
     def _safe_json(self, resp: requests.Response) -> Tuple[Optional[Any], str]:
-        """Intenta parsear JSON, si falla retorna None y el texto"""
+        """Try to parse JSON, if it fails return None and text"""
         try:
             return resp.json(), resp.text
         except Exception:
             return None, resp.text
     
     # =========================================================================
-    # MÉTODOS DE LA API
+    # API METHODS
     # =========================================================================
     
     def get_current_weather(self, latitude: float, longitude: float) -> CallResult:
         """
-        GET /forecast - Obtiene clima actual de una ubicación
+        GET /forecast - Get current weather for a location
         
         Args:
-            latitude: Latitud
-            longitude: Longitud
+            latitude: Latitude
+            longitude: Longitude
             
         Returns:
-            CallResult con datos del clima actual
+            CallResult with current weather data
         """
         params = {
             'latitude': latitude,
@@ -209,20 +207,20 @@ class OpenMeteoClient:
 
 
 # =============================================================================
-# FUNCIONES DE UTILIDAD
+# UTILITY FUNCTIONS
 # =============================================================================
 
 def extract_weather_data(weather_response: Dict[str, Any], country_code: str, city: str) -> Dict[str, Any]:
     """
-    Extrae y normaliza datos de clima
+    Extract and normalize weather data
     
     Args:
-        weather_response: Objeto JSON de la API
-        country_code: Código ISO2 del país
-        city: Nombre de la ciudad
+        weather_response: JSON object from API
+        country_code: ISO2 country code
+        city: City name
         
     Returns:
-        Dict con datos normalizados
+        Dict with normalized data
     """
     current = weather_response.get('current', {})
     
@@ -241,38 +239,38 @@ def extract_weather_data(weather_response: Dict[str, Any], country_code: str, ci
 
 
 if __name__ == '__main__':
-    # Ejemplo de uso
+    # Usage example
     print("=" * 80)
     print("🌤️  Open-Meteo API Client - Demo")
     print("=" * 80)
     
     client = OpenMeteoClient()
     
-    # Ejemplo 1: Clima en Madrid
-    print("\n📍 Ejemplo 1: Clima actual en Madrid, España")
+    # Example 1: Weather in Madrid
+    print("\n📍 Example 1: Current weather in Madrid, Spain")
     print("-" * 80)
     result = client.get_current_weather(latitude=40.4168, longitude=-3.7038)
     print(result)
     if result.ok:
         data = extract_weather_data(result.json_obj, 'ES', 'Madrid')
-        print(f"\n🌤️  Clima en {data['city']}:")
-        print(f"   Tiempo: {data['measured_at']}")
-        print(f"   Temperatura: {data['temperature']}°C")
-        print(f"   Humedad: {data['humidity']}%")
-        print(f"   Precipitación: {data['precipitation']} mm")
-        print(f"   Viento: {data['wind_speed']} km/h")
+        print(f"\n🌤️  Weather in {data['city']}:")
+        print(f"   Time: {data['measured_at']}")
+        print(f"   Temperature: {data['temperature']}°C")
+        print(f"   Humidity: {data['humidity']}%")
+        print(f"   Precipitation: {data['precipitation']} mm")
+        print(f"   Wind: {data['wind_speed']} km/h")
     
-    # Ejemplo 2: Clima en Londres
-    print("\n\n📍 Ejemplo 2: Clima actual en Londres, Reino Unido")
+    # Example 2: Weather in London
+    print("\n\n📍 Example 2: Current weather in London, United Kingdom")
     print("-" * 80)
     result = client.get_current_weather(latitude=51.5074, longitude=-0.1278)
     print(result)
     if result.ok:
         data = extract_weather_data(result.json_obj, 'GB', 'London')
-        print(f"\n🌤️  Clima en {data['city']}:")
-        print(f"   Temperatura: {data['temperature']}°C")
-        print(f"   Humedad: {data['humidity']}%")
+        print(f"\n🌤️  Weather in {data['city']}:")
+        print(f"   Temperature: {data['temperature']}°C")
+        print(f"   Humidity: {data['humidity']}%")
     
     print("\n" + "=" * 80)
-    print("✅ Demo completada")
+    print("✅ Demo completed")
     print("=" * 80)

@@ -56,7 +56,7 @@ def extract_countries_geo() -> List[Dict[str, Any]]:
     
     countries = result.json_obj
     print(f"✅ Retrieved {len(countries)} countries")
-    print(f"   Expected fields: cca2, cca3, latlng, landlocked, borders"))
+    print(f"   Expected fields: cca2, cca3, latlng, landlocked, borders")
     
     return countries
 
@@ -97,7 +97,7 @@ def transform_countries_geo(countries: List[Dict[str, Any]]) -> List[Dict[str, A
     landlocked_example = next((c for c in transformed if c.get('landlocked')), None)
     if landlocked_example:
         print(f"   Example landlocked: {landlocked_example['code_iso3']}")
-        print(f"                       Coordinates: ({landlocked_example['latitude']}, {landlocked_example['longitude']})"))
+        print(f"                       Coordinates: ({landlocked_example['latitude']}, {landlocked_example['longitude']})")
     
     return transformed
 

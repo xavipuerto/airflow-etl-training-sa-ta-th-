@@ -56,7 +56,7 @@ def extract_countries_culture() -> List[Dict[str, Any]]:
     
     countries = result.json_obj
     print(f"✅ Retrieved {len(countries)} countries")
-    print(f"   Expected fields: cca2, cca3, languages, currencies, timezones, flags, independent, unMember, ccn3"))
+    print(f"   Expected fields: cca2, cca3, languages, currencies, timezones, flags, independent, unMember, ccn3")
     
     return countries
 
@@ -100,7 +100,7 @@ def transform_countries_culture(countries: List[Dict[str, Any]]) -> List[Dict[st
     if example_with_lang:
         print(f"   Example with languages: {example_with_lang['code_iso3']}")
         print(f"                           Independent: {example_with_lang['independent']}")
-        print(f"                           UN: {example_with_lang['un_member']}"))
+        print(f"                           UN: {example_with_lang['un_member']}")
     
     return transformed
 

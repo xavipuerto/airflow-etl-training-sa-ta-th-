@@ -3,24 +3,24 @@
 ETL: Get Air Quality Data (AQICN API)
 ======================================
 
-**Objetivo Funcional:** Obtener datos de calidad del aire de ciudades principales
+**Functional Objective:** Get air quality data from major cities
 
 **API:** World Air Quality Index (AQICN)
 **Endpoint:** GET /feed/{city}
 
-**Flujo ETL:**
-1. EXTRACT: Llamar API AQICN para 10 ciudades principales
-2. TRANSFORM: Normalizar datos de AQI y contaminantes
-3. LOAD SA: TRUNCATE + INSERT en sa_training_air_quality
-4. LOAD TH: INSERT append-only en th_training_air_quality (series temporales)
+**ETL Flow:**
+1. EXTRACT: Call AQICN API for 10 major cities
+2. TRANSFORM: Normalize AQI and pollutant data
+3. LOAD SA: TRUNCATE + INSERT into sa_training_air_quality
+4. LOAD TH: INSERT append-only into th_training_air_quality (time series)
 
-**Tabla destino:** ga_integration.th_training_air_quality
+**Target table:** ga_integration.th_training_air_quality
 
-**Concepto ETL:**
-- Series temporales: cada medición es un punto único en el tiempo
-- Estrategia append-only (INSERT, no MERGE)
-- Constraint UNIQUE para evitar duplicados
-- Preparado para TimescaleDB hypertables
+**ETL Concept:**
+- Time series: each measurement is a unique point in time
+- Append-only strategy (INSERT, not MERGE)
+- UNIQUE constraint to avoid duplicates
+- Prepared for TimescaleDB hypertables
 """
 from __future__ import annotations
 
@@ -51,10 +51,10 @@ DB_CONFIG = {
 
 def get_cities_from_db() -> List[tuple]:
     """
-    Obtiene capitales de países desde th_training_countries
+    Get country capitals from th_training_countries
     
     Returns:
-        Lista de tuplas (capital, code_iso2) para países que tienen capital definida
+        List of tuples (capital, code_iso2) for countries that have a defined capital
     """
     conn = psycopg2.connect(**DB_CONFIG)
     cur = conn.cursor()
@@ -76,11 +76,11 @@ def get_cities_from_db() -> List[tuple]:
         cur.execute(query)
         cities = cur.fetchall()
         
-        print(f"📊 Se obtuvieron {len(cities)} capitales desde th_training_countries")
+        print(f"📊 Retrieved {len(cities)} capitals from th_training_countries")
         return cities
         
     except Exception as e:
-        print(f"❌ Error leyendo ciudades de BD: {e}")
+        print(f"❌ Error reading cities from DB: {e}")
         return []
     finally:
         cur.close()
@@ -93,20 +93,20 @@ def get_cities_from_db() -> List[tuple]:
 
 def extract_air_quality() -> List[Dict[str, Any]]:
     """
-    EXTRACT: Obtiene datos de calidad del aire de capitales de todos los países
+    EXTRACT: Get air quality data from capitals of all countries
     
     Returns:
-        Lista de diccionarios con datos de calidad del aire
+        List of dictionaries with air quality data
     """
     print("=" * 80)
-    print("📥 EXTRACT: Obteniendo datos de calidad del aire...")
+    print("📥 EXTRACT: Getting air quality data...")
     print("=" * 80)
     
-    # Obtener ciudades desde BD
+    # Get cities from DB
     cities = get_cities_from_db()
     
     if not cities:
-        print("⚠️  No se encontraron ciudades en la base de datos")
+        print("⚠️  No cities found in database")
         return []
     
     client = AQICNClient()
@@ -117,9 +117,9 @@ def extract_air_quality() -> List[Dict[str, Any]]:
     for city_name, country_code in cities:
         cities_processed += 1
         try:
-            # Mostrar progreso cada 50 ciudades
+            # Show progress every 50 cities
             if cities_processed % 50 == 0:
-                print(f"📍 Procesadas {cities_processed}/{len(cities)} ciudades, {cities_with_data} con datos disponibles...")
+                print(f"📍 Processed {cities_processed}/{len(cities)} cities, {cities_with_data} with available data...")
             
             result = client.get_city_feed(city_name)
             
@@ -130,20 +130,20 @@ def extract_air_quality() -> List[Dict[str, Any]]:
             if not data or data.get('aqi') == '-':
                 continue
             
-            # Extraer y normalizar
+            # Extract and normalize
             aq_data = extract_air_quality_data(data)
-            aq_data['country_code'] = country_code  # Añadir código de país
+            aq_data['country_code'] = country_code  # Add country code
             measurements.append(aq_data)
             cities_with_data += 1
             
         except Exception as e:
-            # Silenciar errores individuales para no saturar logs
+            # Silence individual errors to avoid saturating logs
             continue
     
-    print(f"\n✅ Se obtuvieron {len(measurements)} mediciones")
-    print(f"   📊 Ciudades procesadas: {cities_processed}")
-    print(f"   ✅ Con datos disponibles: {cities_with_data}")
-    print(f"   ⚠️  Sin datos: {cities_processed - cities_with_data}")
+    print(f"\n✅ Retrieved {len(measurements)} measurements")
+    print(f"   📊 Cities processed: {cities_processed}")
+    print(f"   ✅ With available data: {cities_with_data}")
+    print(f"   ⚠️  Without data: {cities_processed - cities_with_data}")
     return measurements
 
 
@@ -153,25 +153,25 @@ def extract_air_quality() -> List[Dict[str, Any]]:
 
 def transform_measurements(measurements: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
-    TRANSFORM: Normaliza mediciones para base de datos
+    TRANSFORM: Normalize measurements for database
     
     Args:
-        measurements: Lista de mediciones sin procesar
+        measurements: List of unprocessed measurements
         
     Returns:
-        Lista de mediciones transformadas
+        List of transformed measurements
     """
     print("\n" + "=" * 80)
-    print("🔄 TRANSFORM: Normalizando mediciones...")
+    print("🔄 TRANSFORM: Normalizing measurements...")
     print("=" * 80)
     
     transformed = []
     for m in measurements:
         try:
-            # Convertir timestamp
+            # Convert timestamp
             measured_at = m.get('measured_at')
             if not measured_at:
-                print(f"   ⚠️  Sin timestamp: {m.get('city_name')}")
+                print(f"   ⚠️  No timestamp: {m.get('city_name')}")
                 continue
             
             transformed_m = {
@@ -197,12 +197,12 @@ def transform_measurements(measurements: List[Dict[str, Any]]) -> List[Dict[str,
             transformed.append(transformed_m)
             
         except Exception as e:
-            print(f"   ⚠️  Error transformando {m.get('city_name')}: {e}")
+            print(f"   ⚠️  Error transforming {m.get('city_name')}: {e}")
             continue
     
-    print(f"✅ Se transformaron {len(transformed)} mediciones")
+    print(f"✅ Transformed {len(transformed)} measurements")
     if transformed:
-        print(f"   Ejemplo: {transformed[0]['city_name']} - AQI: {transformed[0]['aqi']}, "
+        print(f"   Example: {transformed[0]['city_name']} - AQI: {transformed[0]['aqi']}, "
               f"PM2.5: {transformed[0]['pm25']}, {transformed[0]['measured_at']}")
     
     return transformed
@@ -214,17 +214,17 @@ def transform_measurements(measurements: List[Dict[str, Any]]) -> List[Dict[str,
 
 def load_to_sa(measurements: List[Dict[str, Any]], execution_id: str) -> int:
     """
-    LOAD SA: Carga datos en Staging Area (TRUNCATE + INSERT)
+    LOAD SA: Load data into Staging Area (TRUNCATE + INSERT)
     
     Args:
-        measurements: Lista de mediciones transformadas
-        execution_id: ID único de ejecución
+        measurements: List of transformed measurements
+        execution_id: Unique execution ID
         
     Returns:
-        Número de filas insertadas
+        Number of rows inserted
     """
     print("\n" + "=" * 80)
-    print(f"📤 LOAD SA: Cargando en ga_integration.sa_training_air_quality...")
+    print(f"📤 LOAD SA: Loading into ga_integration.sa_training_air_quality...")
     print("=" * 80)
     
     conn = psycopg2.connect(**DB_CONFIG)
@@ -257,7 +257,7 @@ def load_to_sa(measurements: List[Dict[str, Any]], execution_id: str) -> int:
         for m in measurements:
             m['execution_id'] = execution_id
         
-        print(f"📥 Insertando {len(measurements)} mediciones...")
+        print(f"📥 Inserting {len(measurements)} measurements...")
         execute_batch(cur, insert_sql, measurements, page_size=50)
         
         conn.commit()
@@ -265,12 +265,12 @@ def load_to_sa(measurements: List[Dict[str, Any]], execution_id: str) -> int:
         cur.execute("SELECT COUNT(*) FROM ga_integration.sa_training_air_quality")
         count = cur.fetchone()[0]
         
-        print(f"✅ Se insertaron {count} mediciones en SA")
+        print(f"✅ Inserted {count} measurements into SA")
         return count
         
     except Exception as e:
         conn.rollback()
-        print(f"❌ Error en LOAD SA: {e}")
+        print(f"❌ Error in LOAD SA: {e}")
         raise
     finally:
         cur.close()
@@ -283,32 +283,32 @@ def load_to_sa(measurements: List[Dict[str, Any]], execution_id: str) -> int:
 
 def load_to_th(execution_id: str) -> Dict[str, int]:
     """
-    LOAD TH: Carga desde SA a TH (INSERT append-only para series temporales)
+    LOAD TH: Load from SA to TH (INSERT append-only for time series)
     
-    Estrategia:
-    - INSERT nuevas mediciones
-    - ON CONFLICT DO NOTHING para evitar duplicados
-    - No MERGE/UPDATE (las mediciones históricas no se modifican)
+    Strategy:
+    - INSERT new measurements
+    - ON CONFLICT DO NOTHING to avoid duplicates
+    - No MERGE/UPDATE (historical measurements are not modified)
     
     Args:
-        execution_id: ID de ejecución
+        execution_id: Execution ID
         
     Returns:
-        Dict con estadísticas (inserted, duplicates, total)
+        Dict with statistics (inserted, duplicates, total)
     """
     print("\n" + "=" * 80)
-    print(f"📤 LOAD TH: Insertando en ga_integration.th_training_air_quality...")
+    print(f"📤 LOAD TH: Inserting into ga_integration.th_training_air_quality...")
     print("=" * 80)
     
     conn = psycopg2.connect(**DB_CONFIG)
     cur = conn.cursor()
     
     try:
-        # Contar antes
+        # Count before
         cur.execute("SELECT COUNT(*) FROM ga_integration.th_training_air_quality")
         count_before = cur.fetchone()[0]
         
-        # INSERT desde SA a TH (append-only, no MERGE)
+        # INSERT from SA to TH (append-only, not MERGE)
         insert_sql = """
         INSERT INTO ga_integration.th_training_air_quality (
             measured_at, station_id, city_name, country_code,
@@ -330,24 +330,24 @@ def load_to_th(execution_id: str) -> Dict[str, int]:
         DO NOTHING
         """
         
-        print(f"📥 Insertando mediciones desde SA (append-only)...")
+        print(f"📥 Inserting measurements from SA (append-only)...")
         cur.execute(insert_sql)
         rows_inserted = cur.rowcount
         
         conn.commit()
         
-        # Contar después
+        # Count after
         cur.execute("SELECT COUNT(*) FROM ga_integration.th_training_air_quality")
         count_after = cur.fetchone()[0]
         
         duplicates = len([]) if rows_inserted == 0 else (count_after - count_before - rows_inserted)
         
-        print(f"\n✅ LOAD TH completado:")
-        print(f"   Mediciones insertadas: {rows_inserted}")
-        print(f"   Duplicados ignorados: {duplicates if duplicates > 0 else 0}")
-        print(f"   Total en TH: {count_after}")
+        print(f"\n✅ LOAD TH completed:")
+        print(f"   Measurements inserted: {rows_inserted}")
+        print(f"   Duplicates ignored: {duplicates if duplicates > 0 else 0}")
+        print(f"   Total in TH: {count_after}")
         
-        # Mostrar últimas mediciones
+        # Show latest measurements
         cur.execute("""
             SELECT city_name, aqi, pm25, dominant_pollutant, measured_at
             FROM ga_integration.th_training_air_quality
@@ -356,7 +356,7 @@ def load_to_th(execution_id: str) -> Dict[str, int]:
             LIMIT 5
         """, (execution_id,))
         
-        print(f"\n📋 Últimas mediciones insertadas:")
+        print(f"\n📋 Latest inserted measurements:")
         for row in cur.fetchall():
             city, aqi, pm25, pol, ts = row
             print(f"   {city}: AQI {aqi} (PM2.5: {pm25}, {pol}) - {ts}")
@@ -369,7 +369,7 @@ def load_to_th(execution_id: str) -> Dict[str, int]:
         
     except Exception as e:
         conn.rollback()
-        print(f"❌ Error en LOAD TH: {e}")
+        print(f"❌ Error in LOAD TH: {e}")
         raise
     finally:
         cur.close()
@@ -377,18 +377,18 @@ def load_to_th(execution_id: str) -> Dict[str, int]:
 
 
 # =============================================================================
-# ORQUESTACIÓN ETL
+# ETL ORCHESTRATION
 # =============================================================================
 
 def etl_get_air_quality(execution_id: str = None) -> Dict[str, Any]:
     """
-    ETL Completo: Get Air Quality Data
+    Complete ETL: Get Air Quality Data
     
     Args:
-        execution_id: ID de ejecución (opcional, se genera si no se provee)
+        execution_id: Execution ID (optional, generated if not provided)
         
     Returns:
-        Dict con estadísticas de la ejecución
+        Dict with execution statistics
     """
     if execution_id is None:
         execution_id = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -398,7 +398,7 @@ def etl_get_air_quality(execution_id: str = None) -> Dict[str, Any]:
     print("=" * 80)
     print(f"Execution ID: {execution_id}")
     print(f"Timestamp: {datetime.now().isoformat()}")
-    print(f"Fuente: Capitales desde th_training_countries")
+    print(f"Source: Capitals from th_training_countries")
     print("=" * 80)
     
     try:
@@ -406,7 +406,7 @@ def etl_get_air_quality(execution_id: str = None) -> Dict[str, Any]:
         measurements_raw = extract_air_quality()
         
         if not measurements_raw:
-            print("\n⚠️  No se obtuvieron mediciones")
+            print("\n⚠️  No measurements obtained")
             return {
                 'status': 'NO_DATA',
                 'execution_id': execution_id,
@@ -422,7 +422,7 @@ def etl_get_air_quality(execution_id: str = None) -> Dict[str, Any]:
         # 4. LOAD TH
         th_stats = load_to_th(execution_id)
         
-        # Estadísticas
+        # Statistics
         stats = {
             'status': 'SUCCESS',
             'execution_id': execution_id,
@@ -435,22 +435,22 @@ def etl_get_air_quality(execution_id: str = None) -> Dict[str, Any]:
         }
         
         print("\n" + "=" * 80)
-        print("✅ ETL COMPLETADO EXITOSAMENTE")
+        print("✅ ETL COMPLETED SUCCESSFULLY")
         print("=" * 80)
-        print(f"Estado: {stats['status']}")
+        print(f"Status: {stats['status']}")
         print(f"Execution ID: {stats['execution_id']}")
-        print(f"Mediciones extraídas: {stats['measurements_extracted']}")
-        print(f"Mediciones en SA: {stats['rows_in_sa']}")
-        print(f"Insertadas en TH: {stats['th_inserted']}")
-        print(f"Duplicados ignorados: {stats['th_duplicates']}")
-        print(f"Total en TH: {stats['th_total']}")
+        print(f"Measurements extracted: {stats['measurements_extracted']}")
+        print(f"Measurements in SA: {stats['rows_in_sa']}")
+        print(f"Inserted in TH: {stats['th_inserted']}")
+        print(f"Duplicates ignored: {stats['th_duplicates']}")
+        print(f"Total in TH: {stats['th_total']}")
         print("=" * 80)
         
         return stats
         
     except Exception as e:
         print("\n" + "=" * 80)
-        print("❌ ETL FALLIDO")
+        print("❌ ETL FAILED")
         print("=" * 80)
         print(f"Error: {e}")
         print("=" * 80)
@@ -462,9 +462,9 @@ def etl_get_air_quality(execution_id: str = None) -> Dict[str, Any]:
 # =============================================================================
 
 if __name__ == '__main__':
-    # Ejecutar ETL
+    # Execute ETL
     execution_id = f"manual_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     stats = etl_get_air_quality(execution_id=execution_id)
     
-    print("\n📊 Resumen:")
+    print("\n📊 Summary:")
     print(json.dumps(stats, indent=2))
