@@ -56,6 +56,8 @@ class OpenMeteoClient:
     Retry policy:
     - Retry on: 429 (rate limit), 500, 502, 503, 504
     - Maximum 3 attempts
+    - Backoff: 2s, 4s, 8s
+    """
     
     def __init__(
         self,
