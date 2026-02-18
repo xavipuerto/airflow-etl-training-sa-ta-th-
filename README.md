@@ -43,21 +43,29 @@ Practical exercises using public APIs (REST Countries, AQICN weather & air quali
 ```
 .
 ├── docker-compose.yaml          # Airflow setup with PostgreSQL
+├── .gitignore                   # Git ignore rules
 ├── init-db/
-│   └── 01-init-schema.sql      # Database initialization
+│   └── 01-init-schema.sql      # Database initialization (SA & TH tables)
 ├── dags/
 │   └── training_etl_sa_ta_th.py # Main training DAG
 ├── scripts/
-│   ├── training_rest_countries_client.py
-│   ├── training_aqicn_client.py
-│   ├── training_weather_client.py
-│   ├── training_get_countries_basic.py
-│   ├── training_get_countries_geo.py
-│   ├── training_get_countries_culture.py
-│   ├── training_merge_countries_to_th.py
-│   ├── training_get_regions_stats.py
-│   ├── training_get_weather.py
-│   └── training_get_air_quality_aqicn.py
+│   ├── __init__.py
+│   ├── training_rest_countries_client.py    # REST Countries API client
+│   ├── training_aqicn_client.py             # AQICN API client  
+│   ├── training_weather_client.py           # Weather API client
+│   ├── training_get_countries_basic.py      # ETL: Countries basic fields
+│   ├── training_get_countries_geo.py        # ETL: Countries geographic data
+│   ├── training_get_countries_culture.py    # ETL: Countries cultural data
+│   ├── training_merge_countries_to_th.py    # ETL: Merge SA → TH
+│   ├── training_get_regions_stats.py        # ETL: Regional statistics
+│   ├── training_get_weather.py              # ETL: Weather data
+│   └── training_get_air_quality_aqicn.py    # ETL: Air quality data
+├── config/
+│   └── .gitkeep                # Airflow configuration directory
+├── logs/
+│   └── .gitkeep                # Airflow logs directory
+├── plugins/
+│   └── .gitkeep                # Custom Airflow plugins directory
 └── README.md
 ```
 
@@ -183,6 +191,107 @@ get_air_quality ──> (independent)
 - ✅ Connection pooling
 - ✅ SQL injection prevention
 - ✅ Transaction management
+
+## 🎯 Hands-on Exercises
+
+### Exercise 1: Understand the SA-TA-TH Flow
+1. Run the `training_etl_sa_ta_th` DAG
+2. Query the staging tables:
+   ```sql
+   SELECT * FROM ga_integration.sa_training_countries_basic LIMIT 10;
+   SELECT * FROM ga_integration.sa_training_countries_geo LIMIT 10;
+   ```
+3. Query the historical table:
+   ```sql
+   SELECT * FROM ga_integration.th_training_countries LIMIT 10;
+   ```
+4. **Question**: How many countries are there? What's the difference between SA and TH tables?
+
+### Exercise 2: Trace the MERGE Logic
+1. Check the MERGE function in `training_merge_countries_to_th.py`
+2. Run the DAG twice
+3. Query to see what changed:
+   ```sql
+   SELECT cca3, country_name, updated_at, created_at
+   FROM ga_integration.th_training_countries
+   WHERE updated_at > created_at;
+   ```
+4. **Question**: Which countries were updated vs inserted?
+
+### Exercise 3: Time Series Analysis
+1. Let the DAG run for several cycles (wait ~30 minutes)
+2. Query air quality trends:
+   ```sql
+   SELECT 
+       city,
+       DATE_TRUNC('hour', measurement_time) as hour,
+       AVG(aqi) as avg_aqi,
+       COUNT(*) as measurements
+   FROM ga_integration.th_training_air_quality
+   GROUP BY city, hour
+   ORDER BY hour DESC, city;
+   ```
+3. **Question**: How does AQI vary across cities? Which city has the best air quality?
+
+### Exercise 4: Modify the DAG
+1. Add a new region to process in `training_get_regions_stats.py`
+2. Change the schedule interval to 10 minutes
+3. **Challenge**: Create a new task to calculate average population by region
+
+### Exercise 5: Error Handling
+1. Temporarily break the REST Countries API URL
+2. Observe how Airflow handles the failure
+3. Fix the URL and trigger the DAG again
+4. **Question**: How many retries occurred? Check the task logs
+
+## 📊 Useful SQL Queries
+
+### Check data freshness
+```sql
+SELECT 
+    'SA Basic' as table_name,
+    COUNT(*) as row_count,
+    MAX(extraction_timestamp) as last_extraction
+FROM ga_integration.sa_training_countries_basic
+
+UNION ALL
+
+SELECT 
+    'TH Countries',
+    COUNT(*),
+    MAX(updated_at)
+FROM ga_integration.th_training_countries;
+```
+
+### Compare SA vs TH
+```sql
+SELECT 
+    sa.cca3,
+    sa.country_name as sa_name,
+    th.country_name as th_name,
+    sa.population as sa_pop,
+    th.population as th_pop,
+    CASE 
+        WHEN sa.population != th.population THEN 'DIFFERENT'
+        ELSE 'SAME'
+    END as status
+FROM ga_integration.sa_training_countries_basic sa
+LEFT JOIN ga_integration.th_training_countries th ON sa.cca3 = th.cca3
+WHERE sa.population != th.population;
+```
+
+### Regional aggregations
+```sql
+SELECT 
+    region,
+    COUNT(*) as country_count,
+    SUM(population) as total_population,
+    AVG(area) as avg_area,
+    MAX(population) as largest_country_pop
+FROM ga_integration.th_training_countries
+GROUP BY region
+ORDER BY total_population DESC;
+```
 
 ## 🐛 Troubleshooting
 

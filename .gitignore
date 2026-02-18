@@ -5,8 +5,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# Ignorar datos de logs
-logs/
+# Airflow logs (but keep folder structure)
+logs/*
+!logs/.gitkeep
 *.log
 *.pid
 

@@ -1,42 +1,42 @@
 #!/usr/bin/env python3
 """
-DAG de Formación: Arquitectura ETL con SA-TA-TH
-===============================================
+Training DAG: ETL Architecture with SA-TA-TH Pattern
+====================================================
 
-Este DAG demuestra un flujo ETL completo usando APIs públicas
+This DAG demonstrates a complete ETL flow using public APIs
 
-🎯 OBJETIVO EDUCATIVO:
-Enseñar la arquitectura de capas SA-TA-TH en un proceso ETL
+🎯 LEARNING OBJECTIVE:
+Teach the SA-TA-TH layered architecture in an ETL process
 
-📚 CONCEPTOS CLAVE:
-- SA (Staging Area): Capa de aterrizaje con TRUNCATE+INSERT
-- TA (Tablas Auxiliares): Para cruces y volumetría alta (no usado en este ejemplo simple)
-- TH (Tablas Históricas): Capa de persistencia con MERGE o INSERT append-only
+📚 KEY CONCEPTS:
+- SA (Staging Area): Landing zone with TRUNCATE+INSERT
+- TA (Auxiliary Tables): For joins and high-volume transformations (not used in this simple example)
+- TH (Historical Tables): Persistence layer with MERGE or INSERT append-only
 
-🔄 FLUJO:
-1. Get All Countries: API /all → SA + TH (ETL completo con MERGE)
-2. Get Regions Stats: API /region/{region} → Agregacion → SA + TH (con MERGE)
-3. Get Air Quality: API /measurements → SA + TH (series temporales, INSERT append-only)
+🔄 WORKFLOW:
+1. Get All Countries: API /all → SA + TH (Complete ETL with MERGE)
+2. Get Regions Stats: API /region/{region} → Aggregation → SA + TH (with MERGE)
+3. Get Air Quality: API /measurements → SA + TH (time series, INSERT append-only)
 
-📊 FUENTES DE DATOS:
-- REST Countries API: https://restcountries.com/ (países)
-- OpenAQ API: https://api.openaq.org/ (calidad del aire)
+📊 DATA SOURCES:
+- REST Countries API: https://restcountries.com/ (countries data)
+- AQICN API: https://aqicn.org/api/ (air quality & weather)
 
-💡 CASOS DE USO:
-- Datos maestros que cambian poco (países) → MERGE
-- Agregaciones y estadísticas → MERGE
-- Series temporales (aire) → INSERT append-only (preparado para TimescaleDB)
-- JOIN entre fuentes diferentes (países + aire)
+💡 USE CASES:
+- Master data with slow changes (countries) → MERGE
+- Aggregations and statistics → MERGE
+- Time series (air quality) → INSERT append-only (prepared for TimescaleDB)
+- JOIN between different sources (countries + air quality)
 """
 from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 import sys
 
-# Agregar scripts al path
+# Add scripts to path
 sys.path.insert(0, '/opt/airflow/scripts')
 
-# Importar funciones ETL (scripts funcionales) - NUEVO: múltiples SA
+# Import ETL functions (functional scripts) - Multiple SA tables
 from training_get_countries_basic import etl_get_countries_basic
 from training_get_countries_geo import etl_get_countries_geo
 from training_get_countries_culture import etl_get_countries_culture
@@ -47,7 +47,7 @@ from training_get_air_quality_aqicn import etl_get_air_quality
 
 
 # =============================================================================
-# CONFIGURACIÓN DEL DAG
+# DAG CONFIGURATION
 # =============================================================================
 
 default_args = {
@@ -62,8 +62,8 @@ default_args = {
 dag = DAG(
     dag_id='training_etl_sa_ta_th',
     default_args=default_args,
-    description='🎓 Formación: ETL con arquitectura SA-TA-TH usando REST Countries API',
-    schedule=timedelta(minutes=5),  # Ejecutar cada 5 minutos
+    description='🎓 Training: ETL with SA-TA-TH architecture using REST Countries API',
+    schedule=timedelta(minutes=5),  # Run every 5 minutes
     start_date=datetime(2026, 2, 1),
     catchup=False,
     tags=['training', 'etl', 'sa-ta-th', 'rest-countries'],
@@ -71,14 +71,14 @@ dag = DAG(
 
 
 # =============================================================================
-# WRAPPERS PARA AIRFLOW
+# WRAPPERS FOR AIRFLOW
 # =============================================================================
 
 def wrapper_get_countries_basic(**context):
     """
-    Wrapper para ETL: Get Countries BASIC
+    Wrapper for ETL: Get Countries BASIC
     
-    Ejecuta carga de campos básicos: API /all (8 campos) → SA basic
+    Executes loading of basic fields: API /all (8 fields) → SA basic
     """
     execution_id = context['run_id']
     print(f"🎯 Execution ID: {execution_id}")
@@ -86,15 +86,15 @@ def wrapper_get_countries_basic(**context):
     stats = etl_get_countries_basic(execution_id=execution_id)
     context['task_instance'].xcom_push(key='countries_basic_stats', value=stats)
     
-    print(f"✅ ETL países BASIC completado: {stats['rows_inserted_sa']} países")
+    print(f"✅ Countries BASIC ETL completed: {stats['rows_inserted_sa']} countries")
     return stats
 
 
 def wrapper_get_countries_geo(**context):
     """
-    Wrapper para ETL: Get Countries GEO
+    Wrapper for ETL: Get Countries GEO
     
-    Ejecuta carga de campos geográficos: API /all (5 campos) → SA geo
+    Executes loading of geographic fields: API /all (5 fields) → SA geo
     """
     execution_id = context['run_id']
     print(f"🎯 Execution ID: {execution_id}")
@@ -102,15 +102,15 @@ def wrapper_get_countries_geo(**context):
     stats = etl_get_countries_geo(execution_id=execution_id)
     context['task_instance'].xcom_push(key='countries_geo_stats', value=stats)
     
-    print(f"✅ ETL países GEO completado: {stats['rows_inserted_sa']} países")
+    print(f"✅ Countries GEO ETL completed: {stats['rows_inserted_sa']} countries")
     return stats
 
 
 def wrapper_get_countries_culture(**context):
     """
-    Wrapper para ETL: Get Countries CULTURE
+    Wrapper for ETL: Get Countries CULTURE
     
-    Ejecuta carga de campos culturales/políticos: API /all (9 campos) → SA culture
+    Executes loading of cultural/political fields: API /all (9 fields) → SA culture
     """
     execution_id = context['run_id']
     print(f"🎯 Execution ID: {execution_id}")
@@ -118,15 +118,15 @@ def wrapper_get_countries_culture(**context):
     stats = etl_get_countries_culture(execution_id=execution_id)
     context['task_instance'].xcom_push(key='countries_culture_stats', value=stats)
     
-    print(f"✅ ETL países CULTURE completado: {stats['rows_inserted_sa']} países")
+    print(f"✅ Countries CULTURE ETL completed: {stats['rows_inserted_sa']} countries")
     return stats
 
 
 def wrapper_merge_countries_to_th(**context):
     """
-    Wrapper para ETL: Merge Countries SA → TH
+    Wrapper for ETL: Merge Countries SA → TH
     
-    Combina 3 SA (basic + geo + culture) y hace MERGE en TH
+    Combines 3 SA tables (basic + geo + culture) and performs MERGE into TH
     """
     execution_id = context['run_id']
     print(f"🎯 Execution ID: {execution_id}")
@@ -134,15 +134,15 @@ def wrapper_merge_countries_to_th(**context):
     stats = etl_merge_countries_to_th(execution_id=execution_id)
     context['task_instance'].xcom_push(key='countries_merged_stats', value=stats)
     
-    print(f"✅ MERGE completado: {stats['countries_inserted']} nuevos, {stats['countries_updated']} actualizados")
+    print(f"✅ MERGE completed: {stats['countries_inserted']} new, {stats['countries_updated']} updated")
     return stats
 
 
 def wrapper_get_regions_stats(**context):
     """
-    Wrapper para ETL: Get Regions Statistics
+    Wrapper for ETL: Get Regions Statistics
     
-    Ejecuta el flujo completo: API /region/{region} → Agregación → SA → TH
+    Executes complete flow: API /region/{region} → Aggregation → SA → TH
     """
     execution_id = context['run_id']
     print(f"🎯 Execution ID: {execution_id}")
@@ -150,14 +150,14 @@ def wrapper_get_regions_stats(**context):
     stats = etl_get_regions_stats(execution_id=execution_id)
     
     if not stats['success']:
-        raise Exception(f"❌ ETL Get Regions Stats falló: {stats['errors']}")
+        raise Exception(f"❌ ETL Get Regions Stats failed: {stats['errors']}")
     
-    # Guardar estadísticas en XCom
+    # Save statistics to XCom
     context['task_instance'].xcom_push(key='regions_stats', value=stats)
     
-    print(f"✅ ETL completado:")
-    print(f"   📥 Regiones procesadas: {', '.join(stats['regions_processed'])}")
-    print(f"   📊 Países extraídos: {stats['countries_extracted']}")
+    print(f"✅ ETL completed:")
+    print(f"   📥 Regions processed: {', '.join(stats['regions_processed'])}")
+    print(f"   📊 Countries extracted: {stats['countries_extracted']}")
     print(f"   💾 SA loaded: {stats['sa_loaded']}")
     print(f"   📥 TH inserted: {stats['th_inserted']}")
     print(f"   🔄 TH updated: {stats['th_updated']}")
@@ -167,10 +167,10 @@ def wrapper_get_regions_stats(**context):
 
 def wrapper_get_weather(**context):
     """
-    Wrapper para ETL: Get Weather Data
+    Wrapper for ETL: Get Weather Data
     
-    Ejecuta el flujo completo: API /forecast → SA → TH (append-only)
-    Series temporales de datos meteorológicos
+    Executes complete flow: API /forecast → SA → TH (append-only)
+    Time series of weather data
     """
     execution_id = context['run_id']
     print(f"🎯 Execution ID: {execution_id}")
@@ -178,18 +178,18 @@ def wrapper_get_weather(**context):
     stats = etl_get_weather_data(execution_id=execution_id)
     
     if not stats['success']:
-        raise Exception(f"❌ ETL Get Weather Data falló: {stats['errors']}")
+        raise Exception(f"❌ ETL Get Weather Data failed: {stats['errors']}")
     
-    # Guardar estadísticas en XCom
+    # Save statistics to XCom
     context['task_instance'].xcom_push(key='weather_stats', value=stats)
     
-    print(f"✅ ETL completado:")
-    print(f"   📥 Ciudades procesadas: {', '.join(stats['countries_processed'])}")
-    print(f"   📊 Mediciones extraídas: {stats['measurements_extracted']}")
+    print(f"✅ ETL completed:")
+    print(f"   📥 Cities processed: {', '.join(stats['countries_processed'])}")
+    print(f"   📊 Measurements extracted: {stats['measurements_extracted']}")
     print(f"   💾 SA loaded: {stats['sa_loaded']}")
     print(f"   📥 TH inserted: {stats['th_inserted']}")
-    print(f"   🔄 Duplicados ignorados: {stats['th_duplicates']}")
-    print(f"   📊 Total en TH: {stats['th_total']}")
+    print(f"   🔄 Duplicates ignored: {stats['th_duplicates']}")
+    print(f"   📊 Total in TH: {stats['th_total']}")
     
     return stats
 
@@ -197,9 +197,12 @@ def wrapper_get_weather(**context):
 def wrapper_get_air_quality(**context):
     """
     Wrapper para ETL: Get Air Quality from AQICN (World Air Quality Index)
+def wrapper_get_air_quality(**context):
+    """
+    Wrapper for ETL: Get Air Quality from AQICN (World Air Quality Index)
     
-    Ejecuta el flujo completo: AQICN API → SA → TH (append-only)
-    Series temporales de calidad del aire desde capitales en th_training_countries
+    Executes complete flow: AQICN API → SA → TH (append-only)
+    Time series of air quality data from capitals in th_training_countries
     """
     execution_id = context['run_id']
     print(f"🎯 Execution ID: {execution_id}")
@@ -207,17 +210,17 @@ def wrapper_get_air_quality(**context):
     stats = etl_get_air_quality(execution_id=execution_id)
     
     if stats.get('status') != 'SUCCESS':
-        raise Exception(f"❌ ETL Get Air Quality falló: {stats.get('status', 'UNKNOWN')}")
+        raise Exception(f"❌ ETL Get Air Quality failed: {stats.get('status', 'UNKNOWN')}")
     
-    # Guardar estadísticas en XCom
+    # Save statistics to XCom
     context['task_instance'].xcom_push(key='air_quality_stats', value=stats)
     
-    print(f"✅ ETL completado:")
-    print(f"   📊 Mediciones extraídas: {stats['measurements_extracted']}")
+    print(f"✅ ETL completed:")
+    print(f"   📊 Measurements extracted: {stats['measurements_extracted']}")
     print(f"   💾 SA loaded: {stats['rows_in_sa']}")
     print(f"   📥 TH inserted: {stats['th_inserted']}")
-    print(f"   🔄 Duplicados ignorados: {stats['th_duplicates']}")
-    print(f"   📊 Total en TH: {stats['th_total']}")
+    print(f"   🔄 Duplicates ignored: {stats['th_duplicates']}")
+    print(f"   📊 Total in TH: {stats['th_total']}")
     
     return stats
 
