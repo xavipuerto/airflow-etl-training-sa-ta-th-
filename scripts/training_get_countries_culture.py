@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
 """
-ETL: Get Countries - Campos CULTURALES/POLÍTICOS
+ETL: Get Countries - CULTURAL/POLITICAL Fields
 =================================================
 
-**Objetivo Funcional:** Cargar campos culturales, económicos y políticos de todos los países
+**Functional Objective:** Load cultural, economic and political fields of all countries
 
 **Endpoints:**
 - GET /all?fields=cca2,cca3,languages,currencies,timezones,flags,independent,unMember,ccn3
 
-**Flujo ETL:**
-1. EXTRACT: Llamar API REST Countries (9 campos)
-2. TRANSFORM: Normalizar idiomas, monedas, zonas horarias
-3. LOAD SA: TRUNCATE + INSERT en sa_training_countries_culture
+**ETL Flow:**
+1. EXTRACT: Call REST Countries API (9 fields)
+2. TRANSFORM: Normalize languages, currencies, timezones
+3. LOAD SA: TRUNCATE + INSERT into sa_training_countries_culture
 
-**Tabla destino:** ga_integration.sa_training_countries_culture
+**Target table:** ga_integration.sa_training_countries_culture
 
-Este es el PASO 3 de 4 para cargar todos los datos de países.
+This is STEP 3 of 4 to load all country data.
 """
 from __future__ import annotations
 
@@ -41,9 +41,9 @@ DB_CONFIG = {
 
 
 def extract_countries_culture() -> List[Dict[str, Any]]:
-    """EXTRACT: Obtiene campos culturales/políticos de todos los países"""
+    """EXTRACT: Get cultural/political fields of all countries"""
     print("=" * 80)
-    print("📥 EXTRACT: Obteniendo campos culturales/políticos de países...")
+    print("📥 EXTRACT: Getting cultural/political fields from countries...")
     print("=" * 80)
     
     client = RestCountriesClient()
@@ -52,17 +52,17 @@ def extract_countries_culture() -> List[Dict[str, Any]]:
     print(f"\n{result}")
     
     if not result.ok:
-        raise Exception(f"Error en API: {result.status} - {result.text}")
+        raise Exception(f"API Error: {result.status} - {result.text}")
     
     countries = result.json_obj
-    print(f"✅ Se obtuvieron {len(countries)} países")
-    print(f"   Campos esperados: cca2, cca3, languages, currencies, timezones, flags, independent, unMember, ccn3")
+    print(f"✅ Retrieved {len(countries)} countries")
+    print(f"   Expected fields: cca2, cca3, languages, currencies, timezones, flags, independent, unMember, ccn3"))
     
     return countries
 
 
 def transform_country_culture(country: Dict[str, Any]) -> Dict[str, Any]:
-    """TRANSFORM: Normaliza campos culturales/políticos de un país"""
+    """TRANSFORM: Normalize cultural/political fields of a country"""
     return {
         'code_iso2': country.get('cca2'),
         'code_iso3': country.get('cca3'),
@@ -78,9 +78,9 @@ def transform_country_culture(country: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def transform_countries_culture(countries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """TRANSFORM: Normaliza todos los países"""
+    """TRANSFORM: Normalize all countries"""
     print("\n" + "=" * 80)
-    print("🔄 TRANSFORM: Normalizando campos culturales/políticos...")
+    print("🔄 TRANSFORM: Normalizing cultural/political fields...")
     print("=" * 80)
     
     transformed = []
@@ -90,25 +90,25 @@ def transform_countries_culture(countries: List[Dict[str, Any]]) -> List[Dict[st
             transformed.append(data)
         except Exception as e:
             code = country.get('cca3', 'UNKNOWN')
-            print(f"⚠️  Error transformando {code}: {e}")
+            print(f"⚠️  Error transforming {code}: {e}")
             continue
     
-    print(f"✅ Se transformaron {len(transformed)} países")
+    print(f"✅ Transformed {len(transformed)} countries")
     
-    # Mostrar ejemplo con idiomas
+    # Show example with languages
     example_with_lang = next((c for c in transformed if c.get('languages') and c['languages'] != '{}'), None)
     if example_with_lang:
-        print(f"   Ejemplo con idiomas: {example_with_lang['code_iso3']}")
-        print(f"                        Independiente: {example_with_lang['independent']}")
-        print(f"                        ONU: {example_with_lang['un_member']}")
+        print(f"   Example with languages: {example_with_lang['code_iso3']}")
+        print(f"                           Independent: {example_with_lang['independent']}")
+        print(f"                           UN: {example_with_lang['un_member']}"))
     
     return transformed
 
 
 def load_to_sa(countries: List[Dict[str, Any]], execution_id: str) -> int:
-    """LOAD SA: Carga datos en Staging Area (TRUNCATE + INSERT)"""
+    """LOAD SA: Load data into Staging Area (TRUNCATE + INSERT)"""
     print("\n" + "=" * 80)
-    print(f"📤 LOAD SA: Cargando en ga_integration.sa_training_countries_culture...")
+    print(f"📤 LOAD SA: Loading into ga_integration.sa_training_countries_culture...")
     print("=" * 80)
     
     conn = psycopg2.connect(**DB_CONFIG)
@@ -139,7 +139,7 @@ def load_to_sa(countries: List[Dict[str, Any]], execution_id: str) -> int:
         for country in countries:
             country['execution_id'] = execution_id
         
-        print(f"📥 Insertando {len(countries)} países...")
+        print(f"📥 Inserting {len(countries)} countries...")
         execute_batch(cur, insert_sql, countries, page_size=100)
         
         conn.commit()
@@ -147,12 +147,12 @@ def load_to_sa(countries: List[Dict[str, Any]], execution_id: str) -> int:
         cur.execute("SELECT COUNT(*) FROM ga_integration.sa_training_countries_culture")
         count = cur.fetchone()[0]
         
-        print(f"✅ Se insertaron {count} países en SA")
+        print(f"✅ Inserted {count} countries into SA")
         return count
         
     except Exception as e:
         conn.rollback()
-        print(f"❌ Error en LOAD SA: {e}")
+        print(f"❌ Error in LOAD SA: {e}")
         raise
     finally:
         cur.close()
@@ -160,7 +160,7 @@ def load_to_sa(countries: List[Dict[str, Any]], execution_id: str) -> int:
 
 
 def etl_get_countries_culture(execution_id: str = None) -> Dict[str, Any]:
-    """ETL Completo: Get Countries Culture"""
+    """Complete ETL: Get Countries Culture"""
     if execution_id is None:
         execution_id = datetime.now().strftime("%Y%m%d_%H%M%S")
     
@@ -185,17 +185,17 @@ def etl_get_countries_culture(execution_id: str = None) -> Dict[str, Any]:
         }
         
         print("\n" + "=" * 80)
-        print("✅ ETL COMPLETADO EXITOSAMENTE")
+        print("✅ ETL COMPLETED SUCCESSFULLY")
         print("=" * 80)
-        print(f"Países extraídos: {stats['countries_extracted']}")
-        print(f"Filas en SA: {stats['rows_inserted_sa']}")
+        print(f"Countries extracted: {stats['countries_extracted']}")
+        print(f"Rows in SA: {stats['rows_inserted_sa']}")
         print("=" * 80)
         
         return stats
         
     except Exception as e:
         print("\n" + "=" * 80)
-        print("❌ ETL FALLIDO")
+        print("❌ ETL FAILED")
         print("=" * 80)
         print(f"Error: {e}")
         print("=" * 80)
@@ -205,5 +205,5 @@ def etl_get_countries_culture(execution_id: str = None) -> Dict[str, Any]:
 if __name__ == '__main__':
     execution_id = f"manual_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     stats = etl_get_countries_culture(execution_id=execution_id)
-    print("\n📊 Resumen:")
+    print("\n📊 Summary:")
     print(json.dumps(stats, indent=2))

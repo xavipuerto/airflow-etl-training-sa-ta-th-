@@ -1,25 +1,25 @@
 #!/usr/bin/env python3
 """
-ETL: Get Countries - Campos BÁSICOS
-====================================
+ETL: Get Countries - BASIC Fields
+==================================
 
-**Objetivo Funcional:** Cargar campos básicos de todos los países
+**Functional Objective:** Load basic fields of all countries
 
 **Endpoints:**
 - GET /all?fields=cca2,cca3,name,capital,region,subregion,area,population
 
-**Flujo ETL:**
-1. EXTRACT: Llamar API REST Countries (8 campos)
-2. TRANSFORM: Normalizar nombres y estructuras
-3. LOAD SA: TRUNCATE + INSERT en sa_training_countries_basic
+**ETL Flow:**
+1. EXTRACT: Call REST Countries API (8 fields)
+2. TRANSFORM: Normalize names and structures
+3. LOAD SA: TRUNCATE + INSERT into sa_training_countries_basic
 
-**Tabla destino:** ga_integration.sa_training_countries_basic
+**Target table:** ga_integration.sa_training_countries_basic
 
-Este es el PASO 1 de 4 para cargar todos los datos de países:
-- Paso 1: Cargar campos básicos (este script)
-- Paso 2: Cargar campos geográficos
-- Paso 3: Cargar campos culturales
-- Paso 4: MERGE de las 3 SA en TH
+This is STEP 1 of 4 to load all country data:
+- Step 1: Load basic fields (this script)
+- Step 2: Load geographic fields
+- Step 3: Load cultural fields
+- Step 4: MERGE the 3 SA into TH
 """
 from __future__ import annotations
 
@@ -31,13 +31,13 @@ from typing import Any, Dict, List
 import psycopg2
 from psycopg2.extras import execute_batch
 
-# Importar cliente REST Countries
+# Import REST Countries client
 sys.path.insert(0, '/opt/airflow/scripts')
 from training_rest_countries_client import RestCountriesClient
 
 
 # =============================================================================
-# CONFIGURACIÓN
+# CONFIGURATION
 # =============================================================================
 
 DB_CONFIG = {
@@ -55,13 +55,13 @@ DB_CONFIG = {
 
 def extract_countries_basic() -> List[Dict[str, Any]]:
     """
-    EXTRACT: Obtiene campos básicos de todos los países de la API
+    EXTRACT: Get basic fields of all countries from the API
     
     Returns:
-        Lista de diccionarios con datos de países (campos básicos)
+        List of dictionaries with country data (basic fields)
     """
     print("=" * 80)
-    print("📥 EXTRACT: Obteniendo campos básicos de países...")
+    print("📥 EXTRACT: Getting basic fields from countries...")
     print("=" * 80)
     
     client = RestCountriesClient()
@@ -70,11 +70,11 @@ def extract_countries_basic() -> List[Dict[str, Any]]:
     print(f"\n{result}")
     
     if not result.ok:
-        raise Exception(f"Error en API: {result.status} - {result.text}")
+        raise Exception(f"API Error: {result.status} - {result.text}")
     
     countries = result.json_obj
-    print(f"✅ Se obtuvieron {len(countries)} países")
-    print(f"   Campos esperados: cca2, cca3, name, capital, region, subregion, area, population")
+    print(f"✅ Retrieved {len(countries)} countries")
+    print(f"   Expected fields: cca2, cca3, name, capital, region, subregion, area, population")
     
     return countries
 
@@ -85,47 +85,47 @@ def extract_countries_basic() -> List[Dict[str, Any]]:
 
 def transform_country_basic(country: Dict[str, Any]) -> Dict[str, Any]:
     """
-    TRANSFORM: Normaliza campos básicos de un país
+    TRANSFORM: Normalize basic fields of a country
     
     Args:
-        country: Objeto JSON del país de la API
+        country: JSON object of the country from the API
         
     Returns:
-        Dict con datos normalizados para SA
+        Dict with normalized data for SA
     """
     return {
-        # Identificadores
+        # Identifiers
         'code_iso2': country.get('cca2'),
         'code_iso3': country.get('cca3'),
         
-        # Nombres
+        # Names
         'name_common': country.get('name', {}).get('common'),
         'name_official': country.get('name', {}).get('official'),
         'name_native': json.dumps(country.get('name', {}).get('nativeName', {})),
         
-        # Geografía básica
+        # Basic geography
         'capital': json.dumps(country.get('capital', [])),
         'region': country.get('region'),
         'subregion': country.get('subregion'),
         'area': country.get('area'),
         
-        # Población
+        # Population
         'population': country.get('population'),
     }
 
 
 def transform_countries_basic(countries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
-    TRANSFORM: Normaliza todos los países
+    TRANSFORM: Normalize all countries
     
     Args:
-        countries: Lista de países de la API
+        countries: List of countries from the API
         
     Returns:
-        Lista de países transformados
+        List of transformed countries
     """
     print("\n" + "=" * 80)
-    print("🔄 TRANSFORM: Normalizando campos básicos...")
+    print("🔄 TRANSFORM: Normalizing basic fields...")
     print("=" * 80)
     
     transformed = []
@@ -138,9 +138,9 @@ def transform_countries_basic(countries: List[Dict[str, Any]]) -> List[Dict[str,
             print(f"⚠️  Error transformando {code}: {e}")
             continue
     
-    print(f"✅ Se transformaron {len(transformed)} países")
-    print(f"   Ejemplo: {transformed[0]['name_common']} ({transformed[0]['code_iso3']})")
-    print(f"            Región: {transformed[0]['region']}, Población: {transformed[0]['population']:,}")
+    print(f"✅ Transformed {len(transformed)} countries")
+    print(f"   Example: {transformed[0]['name_common']} ({transformed[0]['code_iso3']})")
+    print(f"            Region: {transformed[0]['region']}, Population: {transformed[0]['population']:,}")
     
     return transformed
 
@@ -151,28 +151,28 @@ def transform_countries_basic(countries: List[Dict[str, Any]]) -> List[Dict[str,
 
 def load_to_sa(countries: List[Dict[str, Any]], execution_id: str) -> int:
     """
-    LOAD SA: Carga datos en Staging Area (TRUNCATE + INSERT)
+    LOAD SA: Load data into Staging Area (TRUNCATE + INSERT)
     
     Args:
-        countries: Lista de países transformados
-        execution_id: ID único de ejecución
+        countries: List of transformed countries
+        execution_id: Unique execution ID
         
     Returns:
-        Número de filas insertadas
+        Number of rows inserted
     """
     print("\n" + "=" * 80)
-    print(f"📤 LOAD SA: Cargando en ga_integration.sa_training_countries_basic...")
+    print(f"📤 LOAD SA: Loading into ga_integration.sa_training_countries_basic...")
     print("=" * 80)
     
     conn = psycopg2.connect(**DB_CONFIG)
     cur = conn.cursor()
     
     try:
-        # TRUNCATE: Limpiar tabla SA
+        # TRUNCATE: Clean SA table
         print(f"🗑️  TRUNCATE ga_integration.sa_training_countries_basic")
         cur.execute("TRUNCATE TABLE ga_integration.sa_training_countries_basic")
         
-        # INSERT: Cargar datos nuevos
+        # INSERT: Load new data
         insert_sql = """
         INSERT INTO ga_integration.sa_training_countries_basic (
             code_iso2, code_iso3,
@@ -187,25 +187,25 @@ def load_to_sa(countries: List[Dict[str, Any]], execution_id: str) -> int:
         )
         """
         
-        # Añadir execution_id a cada registro
+        # Add execution_id to each record
         for country in countries:
             country['execution_id'] = execution_id
         
-        print(f"📥 Insertando {len(countries)} países...")
+        print(f"📥 Inserting {len(countries)} countries...")
         execute_batch(cur, insert_sql, countries, page_size=100)
         
         conn.commit()
         
-        # Verificar
+        # Verify
         cur.execute("SELECT COUNT(*) FROM ga_integration.sa_training_countries_basic")
         count = cur.fetchone()[0]
         
-        print(f"✅ Se insertaron {count} países en SA")
+        print(f"✅ Inserted {count} countries into SA")
         return count
         
     except Exception as e:
         conn.rollback()
-        print(f"❌ Error en LOAD SA: {e}")
+        print(f"❌ Error in LOAD SA: {e}")
         raise
     finally:
         cur.close()
@@ -213,18 +213,18 @@ def load_to_sa(countries: List[Dict[str, Any]], execution_id: str) -> int:
 
 
 # =============================================================================
-# ORQUESTACIÓN ETL
+# ETL ORCHESTRATION
 # =============================================================================
 
 def etl_get_countries_basic(execution_id: str = None) -> Dict[str, Any]:
     """
-    ETL Completo: Get Countries Basic
+    Complete ETL: Get Countries Basic
     
     Args:
-        execution_id: ID de ejecución (opcional, se genera si no se provee)
+        execution_id: Execution ID (optional, generated if not provided)
         
     Returns:
-        Dict con estadísticas de la ejecución
+        Dict with execution statistics
     """
     if execution_id is None:
         execution_id = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -246,7 +246,7 @@ def etl_get_countries_basic(execution_id: str = None) -> Dict[str, Any]:
         # 3. LOAD SA
         rows_inserted = load_to_sa(countries_transformed, execution_id)
         
-        # Estadísticas
+        # Statistics
         stats = {
             'status': 'SUCCESS',
             'execution_id': execution_id,
@@ -256,20 +256,20 @@ def etl_get_countries_basic(execution_id: str = None) -> Dict[str, Any]:
         }
         
         print("\n" + "=" * 80)
-        print("✅ ETL COMPLETADO EXITOSAMENTE")
+        print("✅ ETL COMPLETED SUCCESSFULLY")
         print("=" * 80)
-        print(f"Estado: {stats['status']}")
+        print(f"Status: {stats['status']}")
         print(f"Execution ID: {stats['execution_id']}")
-        print(f"Países extraídos: {stats['countries_extracted']}")
-        print(f"Países transformados: {stats['countries_transformed']}")
-        print(f"Filas en SA: {stats['rows_inserted_sa']}")
+        print(f"Countries extracted: {stats['countries_extracted']}")
+        print(f"Countries transformed: {stats['countries_transformed']}")
+        print(f"Rows in SA: {stats['rows_inserted_sa']}")
         print("=" * 80)
         
         return stats
         
     except Exception as e:
         print("\n" + "=" * 80)
-        print("❌ ETL FALLIDO")
+        print("❌ ETL FAILED")
         print("=" * 80)
         print(f"Error: {e}")
         print("=" * 80)
@@ -281,9 +281,9 @@ def etl_get_countries_basic(execution_id: str = None) -> Dict[str, Any]:
 # =============================================================================
 
 if __name__ == '__main__':
-    # Ejecutar ETL
+    # Execute ETL
     execution_id = f"manual_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     stats = etl_get_countries_basic(execution_id=execution_id)
     
-    print("\n📊 Resumen:")
+    print("\n📊 Summary:")
     print(json.dumps(stats, indent=2))

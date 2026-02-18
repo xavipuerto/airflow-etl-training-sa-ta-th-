@@ -1,27 +1,27 @@
 #!/usr/bin/env python3
 """
-Script Funcional: Obtener países por REGIÓN + Estadísticas
+Functional Script: Get Countries by REGION + Statistics
 ===========================================================
 
 Endpoint: GET /region/{region}
-Objetivo: Extraer países de una región específica y calcular estadísticas
+Objective: Extract countries from a specific region and calculate statistics
 
-Regiones disponibles:
+Available regions:
 - africa
 - americas
 - asia
 - europe
 - oceania
 
-Flujo completo SA → TH:
-1. EXTRACT: Llamar API /region/{region} para cada región
-2. LOAD SA: TRUNCATE + INSERT en sa_training_regions_stats
-3. MERGE TH: UPSERT de SA a th_training_regions_stats
+Complete flow SA → TH:
+1. EXTRACT: Call API /region/{region} for each region
+2. LOAD SA: TRUNCATE + INSERT into sa_training_regions_stats
+3. MERGE TH: UPSERT from SA to th_training_regions_stats
 
-Este script demuestra:
-- Llamadas múltiples a la misma API con parámetros diferentes
-- Agregación de datos (COUNT, SUM, AVG)
-- Transformaciones complejas
+This script demonstrates:
+- Multiple calls to the same API with different parameters
+- Data aggregation (COUNT, SUM, AVG)
+- Complex transformations
 """
 import sys
 import psycopg2
@@ -33,7 +33,7 @@ from training_rest_countries_client import RestCountriesClient, extract_country_
 
 
 # =============================================================================
-# CONFIGURACIÓN
+# CONFIGURATION
 # =============================================================================
 
 DB_CONFIG = {
@@ -48,24 +48,24 @@ SCHEMA = 'ga_integration'
 TABLE_SA = 'sa_training_regions_stats'
 TABLE_TH = 'th_training_regions_stats'
 
-# Regiones disponibles en REST Countries API
+# Regions available in REST Countries API
 REGIONS = ['africa', 'americas', 'asia', 'europe', 'oceania']
 
 
 # =============================================================================
-# FUNCIÓN PRINCIPAL: ETL COMPLETO
+# MAIN FUNCTION: COMPLETE ETL
 # =============================================================================
 
 def etl_get_regions_stats(execution_id: str = None, regions: List[str] = None) -> Dict[str, Any]:
     """
-    ETL completo: GET /region/{region} → Agregación → SA → TH
+    Complete ETL: GET /region/{region} → Aggregation → SA → TH
     
     Args:
-        execution_id: ID de la ejecución
-        regions: Lista de regiones a procesar (default: todas)
+        execution_id: Execution ID
+        regions: List of regions to process (default: all)
         
     Returns:
-        Dict con estadísticas completas
+        Dict with complete statistics
     """
     if not execution_id:
         execution_id = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -75,9 +75,9 @@ def etl_get_regions_stats(execution_id: str = None, regions: List[str] = None) -
     
     start_time = datetime.now()
     print(f"\n{'='*80}")
-    print(f"📊 ETL: Estadísticas por Región")
+    print(f"📊 ETL: Statistics by Region")
     print(f"   Endpoint: GET /region/{{region}}")
-    print(f"   Regiones: {', '.join(regions)}")
+    print(f"   Regions: {', '.join(regions)}")
     print(f"   Execution ID: {execution_id}")
     print(f"   Timestamp: {start_time}")
     print(f"{'='*80}\n")
@@ -88,18 +88,18 @@ def etl_get_regions_stats(execution_id: str = None, regions: List[str] = None) -
         'endpoint': '/region/{region}',
         'regions_processed': [],
         
-        # Fase EXTRACT
+        # EXTRACT phase
         'api_calls': 0,
         'countries_extracted': 0,
         
-        # Fase TRANSFORM
+        # TRANSFORM phase
         'regions_calculated': 0,
         
-        # Fase LOAD SA
+        # LOAD SA phase
         'sa_truncated': False,
         'sa_loaded': 0,
         
-        # Fase MERGE TH
+        # MERGE TH phase
         'th_inserted': 0,
         'th_updated': 0,
         'th_total': 0,
@@ -113,33 +113,33 @@ def etl_get_regions_stats(execution_id: str = None, regions: List[str] = None) -
     
     try:
         # =====================================================================
-        # FASE 1: EXTRACT - Obtener países por región
+        # PHASE 1: EXTRACT - Get countries by region
         # =====================================================================
-        print("📥 FASE 1: EXTRACT - Obteniendo países por región")
+        print("📥 PHASE 1: EXTRACT - Getting countries by region")
         print("-" * 80)
         
         client = RestCountriesClient()
         
         for region in regions:
-            print(f"\n🌍 Procesando región: {region.upper()}")
+            print(f"\n🌍 Processing region: {region.upper()}")
             result = client.get_countries_by_region(region)
             stats['api_calls'] += 1
             
             print(f"   {result}")
             
             if not result.ok:
-                error_msg = f"Error en API para región {region}: {result.status}"
+                error_msg = f"API error for region {region}: {result.status}"
                 stats['errors'].append(error_msg)
                 print(f"   ⚠️  {error_msg}")
                 continue
             
             countries = result.json_obj
-            print(f"   ✅ Obtenidos {len(countries)} países de {region}")
+            print(f"   ✅ Retrieved {len(countries)} countries from {region}")
             
             # ================================================================
-            # FASE 2: TRANSFORM - Calcular estadísticas de la región
+            # PHASE 2: TRANSFORM - Calculate region statistics
             # ================================================================
-            print(f"   📊 Calculando estadísticas...")
+            print(f"   📊 Calculating statistics...")
             
             region_stats = calculate_region_stats(region, countries, execution_id)
             region_stats_list.append(region_stats)
@@ -147,43 +147,43 @@ def etl_get_regions_stats(execution_id: str = None, regions: List[str] = None) -
             stats['countries_extracted'] += len(countries)
             stats['regions_processed'].append(region)
             
-            print(f"   ✅ Estadísticas calculadas para {region}:")
-            print(f"      Total países: {region_stats['total_countries']}")
-            print(f"      Población total: {region_stats['total_population']:,}")
-            print(f"      Población promedio: {region_stats['avg_population']:,.0f}")
+            print(f"   ✅ Statistics calculated for {region}:")
+            print(f"      Total countries: {region_stats['total_countries']}")
+            print(f"      Total population: {region_stats['total_population']:,}")
+            print(f"      Average population: {region_stats['avg_population']:,.0f}")
         
         stats['regions_calculated'] = len(region_stats_list)
         
-        print(f"\n✅ Procesadas {stats['regions_calculated']} regiones")
-        print(f"✅ Total países extraídos: {stats['countries_extracted']}")
+        print(f"\n✅ Processed {stats['regions_calculated']} regions")
+        print(f"✅ Total countries extracted: {stats['countries_extracted']}")
         
         # =====================================================================
-        # FASE 3: LOAD SA - Cargar estadísticas a Staging Area
+        # PHASE 3: LOAD SA - Load statistics to Staging Area
         # =====================================================================
-        print(f"\n💾 FASE 3: LOAD SA - Cargando estadísticas a tabla Staging")
+        print(f"\n💾 PHASE 3: LOAD SA - Loading statistics to Staging table")
         print("-" * 80)
         
         conn = psycopg2.connect(**DB_CONFIG)
         cursor = conn.cursor()
         
         # TRUNCATE SA
-        print(f"🗑️  Truncando ga_integration.sa_training_regions_stats...")
+        print(f"🗑️  Truncating ga_integration.sa_training_regions_stats...")
         cursor.execute("TRUNCATE TABLE ga_integration.sa_training_regions_stats")
         stats['sa_truncated'] = True
         
-        # INSERT en SA
+        # INSERT into SA
         if region_stats_list:
-            print(f"📝 Insertando {len(region_stats_list)} registros de regiones en SA...")
+            print(f"📝 Inserting {len(region_stats_list)} region records into SA...")
             insert_stats_sa(cursor, region_stats_list)
             stats['sa_loaded'] = len(region_stats_list)
-            print(f"✅ {stats['sa_loaded']} regiones cargadas en SA")
+            print(f"✅ {stats['sa_loaded']} regions loaded into SA")
         
         conn.commit()
         
         # =====================================================================
-        # FASE 4: MERGE TH - Consolidar en Tabla Histórica
+        # PHASE 4: MERGE TH - Consolidate into Historical Table
         # =====================================================================
-        print(f"\n🔄 FASE 4: MERGE TH - Consolidando SA → TH")
+        print(f"\n🔄 PHASE 4: MERGE TH - Consolidating SA → TH")
         print("-" * 80)
         
         merge_sql = """
@@ -239,20 +239,20 @@ def etl_get_regions_stats(execution_id: str = None, regions: List[str] = None) -
         stats['th_inserted'] = result[0] or 0
         stats['th_updated'] = result[1] or 0
         
-        print(f"✅ MERGE completado:")
-        print(f"   📥 Insertadas: {stats['th_inserted']} regiones")
-        print(f"   🔄 Actualizadas: {stats['th_updated']} regiones")
+        print(f"✅ MERGE completed:")
+        print(f"   📥 Inserted: {stats['th_inserted']} regions")
+        print(f"   🔄 Updated: {stats['th_updated']} regions")
         
-        # Total en TH
+        # Total in TH
         cursor.execute("SELECT COUNT(*) FROM ga_integration.th_training_regions_stats")
         stats['th_total'] = cursor.fetchone()[0]
-        print(f"   📊 Total en TH: {stats['th_total']} regiones")
+        print(f"   📊 Total in TH: {stats['th_total']} regions")
         
         conn.commit()
         stats['success'] = True
         
     except Exception as e:
-        error_msg = f"Error crítico: {e}"
+        error_msg = f"Critical error: {e}"
         stats['errors'].append(error_msg)
         print(f"\n❌ {error_msg}")
         import traceback
@@ -265,7 +265,7 @@ def etl_get_regions_stats(execution_id: str = None, regions: List[str] = None) -
             conn.close()
     
     # =========================================================================
-    # RESUMEN
+    # SUMMARY
     # =========================================================================
     end_time = datetime.now()
     duration = (end_time - start_time).total_seconds()
@@ -273,27 +273,27 @@ def etl_get_regions_stats(execution_id: str = None, regions: List[str] = None) -
     stats['duration_seconds'] = duration
     
     print(f"\n{'='*80}")
-    print(f"📊 RESUMEN ETL: Regions Statistics")
+    print(f"📊 SUMMARY ETL: Regions Statistics")
     print(f"{'='*80}")
     print(f"   Execution ID: {execution_id}")
-    print(f"   Estado: {'✅ EXITOSO' if stats['success'] else '❌ FALLIDO'}")
-    print(f"   Duración: {duration:.2f} segundos")
+    print(f"   Status: {'✅ SUCCESS' if stats['success'] else '❌ FAILED'}")
+    print(f"   Duration: {duration:.2f} seconds")
     print(f"\n   📥 EXTRACT:")
     print(f"      API Calls: {stats['api_calls']}")
-    print(f"      Regiones procesadas: {', '.join(stats['regions_processed'])}")
-    print(f"      Países extraídos: {stats['countries_extracted']}")
+    print(f"      Regions processed: {', '.join(stats['regions_processed'])}")
+    print(f"      Countries extracted: {stats['countries_extracted']}")
     print(f"\n   📊 TRANSFORM:")
-    print(f"      Regiones calculadas: {stats['regions_calculated']}")
+    print(f"      Regions calculated: {stats['regions_calculated']}")
     print(f"\n   💾 LOAD SA:")
-    print(f"      Truncado: {'✅' if stats['sa_truncated'] else '❌'}")
-    print(f"      Cargados: {stats['sa_loaded']}")
+    print(f"      Truncated: {'✅' if stats['sa_truncated'] else '❌'}")
+    print(f"      Loaded: {stats['sa_loaded']}")
     print(f"\n   🔄 MERGE TH:")
-    print(f"      Insertados: {stats['th_inserted']}")
-    print(f"      Actualizados: {stats['th_updated']}")
-    print(f"      Total en TH: {stats['th_total']}")
+    print(f"      Inserted: {stats['th_inserted']}")
+    print(f"      Updated: {stats['th_updated']}")
+    print(f"      Total in TH: {stats['th_total']}")
     
     if stats['errors']:
-        print(f"\n   ⚠️  Errores: {len(stats['errors'])}")
+        print(f"\n   ⚠️  Errors: {len(stats['errors'])}")
         for err in stats['errors'][:5]:
             print(f"      - {err}")
     
@@ -303,17 +303,17 @@ def etl_get_regions_stats(execution_id: str = None, regions: List[str] = None) -
 
 
 # =============================================================================
-# FUNCIONES AUXILIARES
+# HELPER FUNCTIONS
 # =============================================================================
 
 def calculate_region_stats(region: str, countries: List[Dict], execution_id: str) -> Dict[str, Any]:
     """
-    Calcula estadísticas agregadas de una región
+    Calculate aggregated statistics for a region
     
-    Este es un ejemplo de TRANSFORM en ETL:
-    - Agregaciones (COUNT, SUM, AVG)
-    - Filtros condicionales
-    - Cálculos derivados
+    This is an example of TRANSFORM in ETL:
+    - Aggregations (COUNT, SUM, AVG)
+    - Conditional filters
+    - Derived calculations
     """
     total_countries = len(countries)
     total_population = 0
@@ -323,29 +323,29 @@ def calculate_region_stats(region: str, countries: List[Dict], execution_id: str
     un_member_count = 0
     
     for country in countries:
-        # Población
+        # Population
         pop = country.get('population', 0)
         if pop:
             total_population += pop
         
-        # Área
+        # Area
         area = country.get('area', 0)
         if area:
             total_area += area
         
-        # Landlocked (sin salida al mar)
+        # Landlocked
         if country.get('landlocked', False):
             landlocked_count += 1
         
-        # Independiente
+        # Independent
         if country.get('independent', False):
             independent_count += 1
         
-        # Miembro ONU
+        # UN Member
         if country.get('unMember', False):
             un_member_count += 1
     
-    # Promedio
+    # Average
     avg_population = total_population / total_countries if total_countries > 0 else 0
     
     return {
@@ -363,7 +363,7 @@ def calculate_region_stats(region: str, countries: List[Dict], execution_id: str
 
 
 def insert_stats_sa(cursor, stats_list: List[Dict[str, Any]]):
-    """Inserta estadísticas en SA"""
+    """Insert statistics into SA"""
     for stats in stats_list:
         sql = """
         INSERT INTO ga_integration.sa_training_regions_stats (
@@ -385,22 +385,22 @@ def insert_stats_sa(cursor, stats_list: List[Dict[str, Any]]):
 
 if __name__ == '__main__':
     print("\n" + "📊" * 40)
-    print("Script de prueba: Get Regions Stats (ETL completo)")
+    print("Test script: Get Regions Stats (Complete ETL)")
     print("📊" * 40 + "\n")
     
     stats = etl_get_regions_stats()
     
     if stats['success']:
-        print(f"\n✅ ETL ejecutado exitosamente")
-        print(f"\n💡 Consultas útiles:")
-        print(f"   -- Ver estadísticas de todas las regiones:")
+        print(f"\n✅ ETL executed successfully")
+        print(f"\n💡 Useful queries:")
+        print(f"   -- View statistics for all regions:")
         print(f"   SELECT * FROM ga_integration.th_training_regions_stats ORDER BY total_population DESC;")
-        print(f"\n   -- Región con más países:")
+        print(f"\n   -- Region with most countries:")
         print(f"   SELECT region, total_countries FROM ga_integration.th_training_regions_stats ORDER BY total_countries DESC LIMIT 1;")
-        print(f"\n   -- Región con mayor población:")
+        print(f"\n   -- Region with highest population:")
         print(f"   SELECT region, total_population FROM ga_integration.th_training_regions_stats ORDER BY total_population DESC LIMIT 1;")
-        print(f"\n   -- Comparar versiones (si ya se ejecutó antes):")
+        print(f"\n   -- Compare versions (if already run before):")
         print(f"   SELECT region, version, last_updated_at FROM ga_integration.th_training_regions_stats ORDER BY last_updated_at DESC;")
     else:
-        print(f"\n❌ ETL falló. Ver errores arriba.")
+        print(f"\n❌ ETL failed. See errors above.")
         sys.exit(1)

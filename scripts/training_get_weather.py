@@ -1,36 +1,36 @@
 #!/usr/bin/env python3
 """
-ETL: Get Weather Data (Series Temporales)
+ETL: Get Weather Data (Time Series)
 ==========================================
 
-Script funcional que obtiene datos meteorológicos de capitales usando Open-Meteo API
+Functional script that gets weather data from capitals using Open-Meteo API
 
-🎯 Objetivo: Demostrar ETL con series temporales (append-only INSERT)
+🎯 Objective: Demonstrate ETL with time series (append-only INSERT)
 
-Flujo:
-1. EXTRACT: Llamar a Open-Meteo API para capitales de países
-2. TRANSFORM: Normalizar datos de clima
-3. LOAD SA: TRUNCATE + INSERT en sa_training_weather
-4. LOAD TH: INSERT (append-only) en th_training_weather
+Flow:
+1. EXTRACT: Call Open-Meteo API for country capitals
+2. TRANSFORM: Normalize weather data
+3. LOAD SA: TRUNCATE + INSERT into sa_training_weather
+4. LOAD TH: INSERT (append-only) into th_training_weather
 
-Diferencias con otros ETLs:
-- Series temporales (timestamp + location unique)
-- NO usa MERGE, solo INSERT
-- Preparado para TimescaleDB hypertables
+Differences with other ETLs:
+- Time series (timestamp + location unique)
+- Does NOT use MERGE, only INSERT
+- Prepared for TimescaleDB hypertables
 """
 import sys
 import psycopg2
 from datetime import datetime
 from typing import Dict, Any, List
 
-# Agregar scripts al path
+# Add scripts to path
 sys.path.insert(0, '/opt/airflow/scripts')
 
 from training_weather_client import OpenMeteoClient, extract_weather_data
 
 
 # =============================================================================
-# CONFIGURACIÓN
+# CONFIGURATION
 # =============================================================================
 
 DB_CONFIG = {
@@ -41,7 +41,7 @@ DB_CONFIG = {
     'password': 'goaigua2026',
 }
 
-# Capitales de países para obtener datos
+# Capitals of countries to fetch data
 # (country_code, city, latitude, longitude)
 CAPITALS = [
     ('ES', 'Madrid', 40.4168, -3.7038),
@@ -58,18 +58,18 @@ CAPITALS = [
 
 
 # =============================================================================
-# FUNCIÓN PRINCIPAL: ETL COMPLETO
+# MAIN FUNCTION: COMPLETE ETL
 # =============================================================================
 
 def etl_get_weather_data(execution_id: str = None) -> Dict[str, Any]:
     """
-    ETL completo: GET weather data → SA → TH
+    Complete ETL: GET weather data → SA → TH
     
     Args:
-        execution_id: ID de la ejecución (para tracking)
+        execution_id: Execution ID (for tracking)
         
     Returns:
-        Dict con estadísticas de la ejecución
+        Dict with execution statistics
     """
     if not execution_id:
         execution_id = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -87,25 +87,25 @@ def etl_get_weather_data(execution_id: str = None) -> Dict[str, Any]:
     }
     
     print("\n" + "=" * 80)
-    print("🌤️  ETL: Obtener Datos Meteorológicos")
+    print("🌤️  ETL: Get Weather Data")
     print(f"   Endpoint: GET /forecast")
-    print(f"   Ciudades: {len(CAPITALS)}")
+    print(f"   Cities: {len(CAPITALS)}")
     print(f"   Execution ID: {execution_id}")
     print(f"   Timestamp: {datetime.now()}")
     print("=" * 80)
     
     try:
         # =================================================================
-        # FASE 1: EXTRACT - Obtener datos de la API
+        # PHASE 1: EXTRACT - Get data from API
         # =================================================================
-        print("\n📥 FASE 1: EXTRACT - Obteniendo datos de Open-Meteo")
+        print("\n📥 PHASE 1: EXTRACT - Getting data from Open-Meteo")
         print("-" * 80)
         
         client = OpenMeteoClient()
         measurements = []
         
         for country, city, lat, lon in CAPITALS:
-            print(f"\n🌍 Procesando: {city}, {country}")
+            print(f"\n🌍 Processing: {city}, {country}")
             result = client.get_current_weather(latitude=lat, longitude=lon)
             print(f"   {result}")
             
@@ -113,33 +113,33 @@ def etl_get_weather_data(execution_id: str = None) -> Dict[str, Any]:
                 data = extract_weather_data(result.json_obj, country, city)
                 measurements.append(data)
                 stats['countries_processed'].append(country)
-                print(f"   ✅ Temperatura: {data['temperature']}°C, Humedad: {data['humidity']}%")
+                print(f"   ✅ Temperature: {data['temperature']}°C, Humidity: {data['humidity']}%")
             else:
-                print(f"   ⚠️  Error al obtener datos de {city}")
-                stats['errors'].append(f"Error en {city}: {result.status}")
+                print(f"   ⚠️  Error getting data from {city}")
+                stats['errors'].append(f"Error in {city}: {result.status}")
         
         stats['measurements_extracted'] = len(measurements)
-        print(f"\n✅ Total extraído: {len(measurements)} mediciones de {len(set(stats['countries_processed']))} ciudades")
+        print(f"\n✅ Total extracted: {len(measurements)} measurements from {len(set(stats['countries_processed']))} cities")
         
         if len(measurements) == 0:
-            print("⚠️  No se extrajeron mediciones. Terminando.")
+            print("⚠️  No measurements extracted. Terminating.")
             return stats
         
         # =================================================================
-        # FASE 2: LOAD SA - Cargar a Staging Area
+        # PHASE 2: LOAD SA - Load to Staging Area
         # =================================================================
-        print("\n💾 FASE 2: LOAD SA - Cargando a tabla Staging")
+        print("\n💾 PHASE 2: LOAD SA - Loading to Staging table")
         print("-" * 80)
         
         conn = psycopg2.connect(**DB_CONFIG)
         cur = conn.cursor()
         
-        # Truncar SA
-        print(f"🗑️  Truncando ga_integration.sa_training_weather...")
+        # Truncate SA
+        print(f"🗑️  Truncating ga_integration.sa_training_weather...")
         cur.execute("TRUNCATE TABLE ga_integration.sa_training_weather")
         
-        # Insertar en SA
-        print(f"📝 Insertando {len(measurements)} mediciones en SA...")
+        # Insert into SA
+        print(f"📝 Inserting {len(measurements)} measurements into SA...")
         insert_sa = """
             INSERT INTO ga_integration.sa_training_weather (
                 measured_at, country, city, latitude, longitude,
@@ -161,15 +161,15 @@ def etl_get_weather_data(execution_id: str = None) -> Dict[str, Any]:
         
         conn.commit()
         stats['sa_loaded'] = len(measurements)
-        print(f"✅ {len(measurements)} mediciones cargadas en SA")
+        print(f"✅ {len(measurements)} measurements loaded into SA")
         
         # =================================================================
-        # FASE 3: LOAD TH - Consolidar SA → TH (Append-only)
+        # PHASE 3: LOAD TH - Consolidate SA → TH (Append-only)
         # =================================================================
-        print("\n📊 FASE 3: LOAD TH - Consolidando SA → TH (append-only)")
+        print("\n📊 PHASE 3: LOAD TH - Consolidating SA → TH (append-only)")
         print("-" * 80)
         
-        # INSERT con ON CONFLICT DO NOTHING (evitar duplicados)
+        # INSERT with ON CONFLICT DO NOTHING (avoid duplicates)
         merge_sql = """
             INSERT INTO ga_integration.th_training_weather (
                 measured_at, country, city, latitude, longitude,
@@ -188,17 +188,17 @@ def etl_get_weather_data(execution_id: str = None) -> Dict[str, Any]:
         stats['th_inserted'] = cur.rowcount
         conn.commit()
         
-        # Contar duplicados
+        # Count duplicates
         stats['th_duplicates'] = len(measurements) - stats['th_inserted']
         
-        # Contar total en TH
+        # Count total in TH
         cur.execute("SELECT COUNT(*) FROM ga_integration.th_training_weather")
         stats['th_total'] = cur.fetchone()[0]
         
-        print(f"✅ INSERT completado:")
-        print(f"   📥 Insertadas: {stats['th_inserted']}")
-        print(f"   🔄 Duplicados ignorados: {stats['th_duplicates']}")
-        print(f"   📊 Total en TH: {stats['th_total']}")
+        print(f"✅ INSERT completed:")
+        print(f"   📥 Inserted: {stats['th_inserted']}")
+        print(f"   🔄 Duplicates ignored: {stats['th_duplicates']}")
+        print(f"   📊 Total in TH: {stats['th_total']}")
         
         cur.close()
         conn.close()
@@ -206,31 +206,31 @@ def etl_get_weather_data(execution_id: str = None) -> Dict[str, Any]:
         stats['success'] = True
         
         # =================================================================
-        # RESUMEN
+        # SUMMARY
         # =================================================================
         print("\n" + "=" * 80)
-        print("📊 RESUMEN ETL: Weather Data")
+        print("📊 SUMMARY ETL: Weather Data")
         print("=" * 80)
         print(f"   Execution ID: {execution_id}")
-        print(f"   Estado: ✅ EXITOSO")
+        print(f"   Status: ✅ SUCCESS")
         print("")
         print(f"   📥 EXTRACT:")
-        print(f"      Ciudades procesadas: {', '.join(set(stats['countries_processed']))}")
-        print(f"      Mediciones extraídas: {stats['measurements_extracted']}")
+        print(f"      Cities processed: {', '.join(set(stats['countries_processed']))}")
+        print(f"      Measurements extracted: {stats['measurements_extracted']}")
         print("")
         print(f"   💾 LOAD SA:")
-        print(f"      Truncado: ✅")
-        print(f"      Cargadas: {stats['sa_loaded']}")
+        print(f"      Truncated: ✅")
+        print(f"      Loaded: {stats['sa_loaded']}")
         print("")
         print(f"   📊 LOAD TH:")
-        print(f"      Insertadas: {stats['th_inserted']}")
-        print(f"      Duplicados: {stats['th_duplicates']}")
-        print(f"      Total en TH: {stats['th_total']}")
+        print(f"      Inserted: {stats['th_inserted']}")
+        print(f"      Duplicates: {stats['th_duplicates']}")
+        print(f"      Total in TH: {stats['th_total']}")
         print("=" * 80)
         
     except Exception as e:
         stats['errors'].append(str(e))
-        print(f"\n❌ Error en ETL: {e}")
+        print(f"\n❌ Error in ETL: {e}")
         import traceback
         traceback.print_exc()
     
@@ -238,23 +238,23 @@ def etl_get_weather_data(execution_id: str = None) -> Dict[str, Any]:
 
 
 # =============================================================================
-# MAIN: Ejecutar si se llama directamente
+# MAIN: Execute if called directly
 # =============================================================================
 
 if __name__ == '__main__':
     print("\n🌤️ " * 40)
-    print("Script de prueba: Get Weather Data (ETL completo)")
+    print("Test script: Get Weather Data (Complete ETL)")
     print("🌤️ " * 40)
     
     result = etl_get_weather_data()
     
     if result['success']:
-        print("\n✅ ETL ejecutado exitosamente")
-        print("\n💡 Consultas útiles:")
-        print("   -- Ver datos en TH:")
+        print("\n✅ ETL executed successfully")
+        print("\n💡 Useful queries:")
+        print("   -- View data in TH:")
         print(f"   SELECT city, temperature, humidity FROM ga_integration.th_training_weather ORDER BY measured_at DESC LIMIT 10;")
-        print("   -- Ver por país:")
+        print("   -- View by country:")
         print(f"   SELECT country, AVG(temperature) as avg_temp FROM ga_integration.th_training_weather GROUP BY country;")
     else:
-        print("\n❌ ETL falló. Ver errores arriba.")
+        print("\n❌ ETL failed. See errors above.")
         sys.exit(1)
