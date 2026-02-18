@@ -106,7 +106,7 @@ services:
     restart: always
 
   postgres-goaigua:
-    image: postgres:17
+    image: timescale/timescaledb:latest-pg17
     environment:
       POSTGRES_USER: goaigua
       POSTGRES_PASSWORD: goaigua2026

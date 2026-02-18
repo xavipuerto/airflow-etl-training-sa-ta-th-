@@ -1,14 +1,21 @@
 -- =========================================
 -- Script de inicialización de tablas
 -- Esquema: ga_integration
--- Base de datos: goaigua_data (PostgreSQL 17)
+-- Base de datos: goaigua_data (TimescaleDB on PostgreSQL 17)
 -- =========================================
+
+-- Enable TimescaleDB extension
+CREATE EXTENSION IF NOT EXISTS timescaledb;
 
 -- Crear el esquema ga_integration
 CREATE SCHEMA IF NOT EXISTS ga_integration;
 
+-- Crear el esquema para particiones de TimescaleDB
+CREATE SCHEMA IF NOT EXISTS ga_integration_part;
+
 -- Dar permisos al usuario goaigua sobre el esquema
 GRANT ALL PRIVILEGES ON SCHEMA ga_integration TO goaigua;
+GRANT ALL PRIVILEGES ON SCHEMA ga_integration_part TO goaigua;
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA ga_integration TO goaigua;
 GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA ga_integration TO goaigua;
 
@@ -583,5 +590,125 @@ COMMENT ON TABLE ga_integration.th_training_air_quality IS 'Target: Histórico d
 
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA ga_integration TO goaigua;
 GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA ga_integration TO goaigua;
+
+-- =========================================
+-- TIMESCALEDB HYPERTABLE SETUP (Manual Steps)
+-- =========================================
+
+/*
+ IMPORTANT: Execute these commands AFTER running the ETL a few times to populate data.
+
+ (1) Connect to the database:
+     psql -h localhost -p 5433 -U goaigua -d goaigua_data
+
+ (2) Convert th_training_air_quality to hypertable with monthly partitions:
+
+     SELECT create_hypertable(
+       'ga_integration.th_training_air_quality',
+       'measured_at',
+       chunk_time_interval => INTERVAL '1 month',
+       associated_schema_name => 'ga_integration_part',
+       associated_table_prefix => 'th_training_air_quality',
+       if_not_exists => true,
+       migrate_data => true
+     );
+
+ (3) Create additional recommended indexes:
+
+     CREATE INDEX IF NOT EXISTS idx_th_air_quality_measured_at
+       ON ga_integration.th_training_air_quality (measured_at);
+
+     CREATE INDEX IF NOT EXISTS idx_th_air_quality_station
+       ON ga_integration.th_training_air_quality (station_id);
+
+     CREATE INDEX IF NOT EXISTS idx_th_air_quality_station_measured
+       ON ga_integration.th_training_air_quality (station_id, measured_at DESC);
+
+ (4) Configure compression:
+
+     ALTER TABLE ga_integration.th_training_air_quality SET (
+       timescaledb.compress = true,
+       timescaledb.compress_orderby = 'measured_at DESC',
+       timescaledb.compress_segmentby = 'station_id'
+     );
+
+ (5) Add automatic compression policy (compress chunks > 300 days):
+
+     SELECT add_compression_policy(
+       'ga_integration.th_training_air_quality',
+       INTERVAL '300 days'
+     );
+
+ (6) Insert 5000 test rows distributed over the last 30 days with UPSERT:
+
+     INSERT INTO ga_integration.th_training_air_quality
+     (
+       measured_at, station_id, city_name, country_code,
+       latitude, longitude, aqi, dominant_pollutant,
+       pm25, pm10, o3, no2, so2, co,
+       temperature, humidity, pressure, wind_speed,
+       execution_id, loaded_at
+     )
+     SELECT
+       date_trunc('hour', now() - (random() * interval '30 days')) AS measured_at,
+       (1000 + floor(random() * 20000))::int AS station_id,
+       ('City-' || (1 + floor(random() * 500))::int)::varchar(100) AS city_name,
+       (ARRAY['ES','IT','FR','DE','GB','AE','SA','PT','NL','BE','TR','PL','GR','RO','SE','FI','IE','CH','DK','NO'])[1 + floor(random()*20)]::varchar(2) AS country_code,
+       round(((-60 + random()*140)::numeric), 6) AS latitude,
+       round(((-170 + random()*340)::numeric), 6) AS longitude,
+       (floor(random() * 401))::int AS aqi,
+       CASE
+         WHEN random() < 0.05 THEN NULL
+         ELSE (ARRAY['pm25','pm10','o3','no2','so2','co'])[1 + floor(random()*6)]::varchar(10)
+       END AS dominant_pollutant,
+       CASE WHEN random() < 0.10 THEN NULL ELSE round((random()*250)::numeric, 2) END AS pm25,
+       CASE WHEN random() < 0.15 THEN NULL ELSE round((random()*300)::numeric, 2) END AS pm10,
+       CASE WHEN random() < 0.20 THEN NULL ELSE round((random()*200)::numeric, 2) END AS o3,
+       CASE WHEN random() < 0.20 THEN NULL ELSE round((random()*200)::numeric, 2) END AS no2,
+       CASE WHEN random() < 0.25 THEN NULL ELSE round((random()*50 )::numeric, 2) END AS so2,
+       CASE WHEN random() < 0.30 THEN NULL ELSE round((random()*20 )::numeric, 2) END AS co,
+       round(((-10 + random()*50 )::numeric), 2) AS temperature,
+       round(((10 + random()*90 )::numeric), 2) AS humidity,
+       round(((950 + random()*100)::numeric), 2) AS pressure,
+       round(((0 + random()*15 )::numeric), 2) AS wind_speed,
+       ('scheduled__' || to_char(now(), 'YYYY-MM-DD"T"HH24:MI:SS.MS') || '+00:00')::varchar(100) AS execution_id,
+       now() AS loaded_at
+     FROM generate_series(1, 5000)
+     ON CONFLICT (measured_at, station_id) DO UPDATE
+     SET
+       city_name = EXCLUDED.city_name,
+       country_code = EXCLUDED.country_code,
+       latitude = EXCLUDED.latitude,
+       longitude = EXCLUDED.longitude,
+       aqi = EXCLUDED.aqi,
+       dominant_pollutant = EXCLUDED.dominant_pollutant,
+       pm25 = EXCLUDED.pm25,
+       pm10 = EXCLUDED.pm10,
+       o3 = EXCLUDED.o3,
+       no2 = EXCLUDED.no2,
+       so2 = EXCLUDED.so2,
+       co = EXCLUDED.co,
+       temperature = EXCLUDED.temperature,
+       humidity = EXCLUDED.humidity,
+       pressure = EXCLUDED.pressure,
+       wind_speed = EXCLUDED.wind_speed,
+       execution_id = EXCLUDED.execution_id,
+       loaded_at = EXCLUDED.loaded_at;
+
+ (7) Verify partitions created:
+
+     SELECT * FROM timescaledb_information.chunks
+     WHERE hypertable_name = 'th_training_air_quality'
+     ORDER BY chunk_name;
+
+ (8) Query example with partition pruning:
+
+     SELECT station_id, city_name, aqi, measured_at
+     FROM ga_integration.th_training_air_quality
+     WHERE measured_at >= now() - interval '7 days'
+       AND station_id = 5000
+     ORDER BY measured_at DESC
+     LIMIT 10;
+*/
 
 COMMIT;
